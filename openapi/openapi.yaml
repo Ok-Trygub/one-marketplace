@@ -45,6 +45,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
     post:
       operationId: createProduct
       summary: Create a product
@@ -85,6 +91,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /orders:
     get:
       operationId: listOrders
@@ -118,6 +130,12 @@ paths:
 
         '400':
           description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
           content:
             application/problem+json:
               schema:
@@ -173,6 +191,12 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /orders/{id}:
     get:
       operationId: getOrder
@@ -196,6 +220,12 @@ paths:
 
         '404':
           description: Order not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
           content:
             application/problem+json:
               schema:
@@ -231,6 +261,7 @@ components:
           nullable: true
     CreateProduct:
       type: object
+      additionalProperties: false
       required:
         - name
         - price_cents
@@ -314,6 +345,7 @@ components:
             $ref: '#/components/schemas/CreateOrderItem'
     CreateOrderItem:
       type: object
+      additionalProperties: false
       required:
         - product_id
         - quantity
