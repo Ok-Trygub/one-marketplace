@@ -1,0 +1,7 @@
+services:
+  api:
+    build:
+      context: .
+      target: runner
+    image: my-image:prod
+    container_name: my-api-container

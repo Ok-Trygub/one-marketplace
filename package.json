@@ -1,0 +1,31 @@
+{
+  "name": "marketplace",
+  "version": "1.0.0",
+  "description": "marketplace",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ok-Trygub/Marketplace"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "dist/src/server.js",
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
+    "start": "node dist/src/server.js",
+    "dev": "npm run build && node --watch dist/src/server.js",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:status": "docker compose ps"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "express": "^4.22.2"
+  }
+}
