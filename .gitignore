@@ -1,11 +1,14 @@
 node_modules/
 dist/
+spec.json
 
 npm-debug.log*
 yarn-error.log*
 
 .env
 .env.*
+!.env.example
+secrets/
 
 .DS_Store
 

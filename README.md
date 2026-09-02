@@ -1,94 +1,167 @@
-# One Marketplace API
+## Configuration
 
-REST API for a marketplace application built with Node.js, Express and TypeScript.
+### Environment variables
 
-## API
+Application configuration is validated on startup using Zod through NestJS `ConfigModule`.
 
-* `GET /products` — list products
-* `POST /products` — create a product
-* `GET /orders` — list orders
-* `POST /orders` — create an order
-* `GET /orders/{id}` — get an order by ID
+```env
+PORT=5001
+DB_URL=postgres://app_user:initial_password@localhost:5432/marketplace
+LOG_LEVEL=info
+TIMEOUT_MS=5000
+```
 
-## Run
+`PORT` and `DB_URL` are required.
+
+`LOG_LEVEL` accepts only:
+
+* `debug`
+* `info`
+* `warn`
+* `error`
+
+Default: `info`.
+
+`TIMEOUT_MS` must be a positive integer.
+
+Default: `5000`.
+
+Invalid configuration causes the application to fail during startup.
+
+The repository contains `.env.example` as the configuration contract. The real `.env` file is not committed.
+
+Check that `.env.example` matches the Zod schema:
 
 ```bash
-npm install
+npm run check:env
+```
+
+### PostgreSQL
+
+Start PostgreSQL:
+
+```bash
+docker compose up -d postgres
+```
+
+The local database configuration is:
+
+```text
+Database: marketplace
+User: app_user
+Port: 5432
+```
+
+The database password is stored in:
+
+```text
+secrets/db_password
+```
+
+The `secrets/` directory is excluded from Git and Docker build context.
+
+### Application
+
+Build and start the application:
+
+```bash
 npm run build
-npm start
+npm run start
 ```
 
-Server:
+The application listens on port `5001`.
+
+Check the health endpoint:
+
+```bash
+curl http://localhost:5001/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "database": true
+}
+```
+
+### Password rotation
+
+Database password rotation is performed by:
+
+```bash
+bash rotate.sh
+```
+
+The script:
+
+1. changes the PostgreSQL password using `ALTER ROLE`;
+2. updates `secrets/db_password`;
+3. terminates existing connections for `app_user`.
+
+The application process is not restarted.
+
+After rotation, verify the database connection:
+
+```bash
+curl http://localhost:5001/health
+```
+
+The expected response remains:
+
+```json
+{
+  "status": "ok",
+  "database": true
+}
+```
+
+### Infisical
+
+Infisical is used as the external secret-management option for the additional challenge.
+
+The application must not store the database password in source code, Dockerfile, Docker image environment variables, or Git-tracked files.
+
+The secret should be provided to the application through the secret-management system instead of committing it to the repository.
+
+The local file-based secret mechanism remains available for the required password-rotation test:
 
 ```text
-http://localhost:3000
+secrets/db_password
 ```
 
-## OpenAPI
+### Docker
 
-OpenAPI specification:
+Build the application image:
+
+```bash
+docker build -t myapp .
+```
+
+Local secrets are excluded from the Docker build context through `.dockerignore`.
+
+The image must not contain:
 
 ```text
-openapi/openapi.yaml
+.env
+secrets/
 ```
 
-Bundle the specification:
+Verify that `.env` is absent:
 
 ```bash
-npx @redocly/cli bundle openapi/openapi.yaml -o spec.json
+docker run --rm myapp sh -c 'cat /app/.env' 2>&1
 ```
 
-Lint the specification:
+Verify that no database password is present in image environment variables:
 
 ```bash
-npx @redocly/cli lint openapi/openapi.yaml
+docker inspect --format '{{.Config.Env}}' myapp
 ```
 
-## Verify
-
-Start the server first, then run the checks below.
-
-Request without `Idempotency-Key` — expected `400` with `application/problem+json`:
+Verify that no password is present in Docker build history:
 
 ```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -d '{"items":[{"product_id":"laptop","quantity":1}]}'
+docker history --no-trunc myapp | grep -i password
 ```
-
-Request with an invalid body — expected `400` with the detail from the validator:
-
-```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: order-key-1' \
-  -d '{"items":[]}'
-```
-
-Valid request — expected `201`:
-
-```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: order-key-1' \
-  -d '{"items":[{"product_id":"laptop","quantity":1}]}'
-```
-
-Repeat the valid request with the same key and the same body — expected `201` with the `Idempotency-Replay: true` header and the same order.
-
-Repeat it with the same key and a different body — expected `422` with `application/problem+json`:
-
-```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: order-key-1' \
-  -d '{"items":[{"product_id":"phone","quantity":3}]}'
-```
-
-Check the number of operations and resources in the specification:
-
-```bash
-npx @redocly/cli bundle openapi/openapi.yaml -o spec.json
-node -e "const s=require('./spec.json'),M=['get','post','put','patch','delete'];const ops=Object.entries(s.paths).flatMap(([p,v])=>Object.keys(v).filter(m=>M.includes(m)).map(m=>[p,m]));const idem=ops.flatMap(([p,m])=>s.paths[p][m].parameters??[]).find(x=>x.in==='header'&&/idempotency-key/i.test(x.name));console.log('operations:',ops.length,'resources:',new Set(Object.keys(s.paths).map(p=>p.split('/')[1])).size);console.log('Idempotency-Key required =',idem?.required)"
-```
-

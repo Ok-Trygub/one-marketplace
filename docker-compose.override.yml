@@ -5,7 +5,7 @@ services:
       target: dev
     image: my-image:dev
     ports:
-      - "3000:3000"
+      - "5001:5001"
     volumes:
       - .:/app
       - /app/node_modules
