@@ -11,7 +11,7 @@ LOG_LEVEL=info
 TIMEOUT_MS=5000
 ```
 
-`PORT` and `DB_URL` are required.
+`PORT` and `DB_URL` are required. `DB_URL` provides the host, port, database and user; the password comes from the secret file. Use `localhost` when running on the host and `postgres` when running through Compose.
 
 `LOG_LEVEL` accepts only:
 
@@ -62,11 +62,18 @@ The `secrets/` directory is excluded from Git and Docker build context.
 
 ### Application
 
-Build and start the application:
+Start the application together with PostgreSQL:
 
 ```bash
-npm run build
-npm run start
+docker compose up -d --build
+```
+
+The application connects to PostgreSQL over the Docker network, so it runs inside Compose rather than on the host.
+
+If the container starts with an outdated `node_modules`, renew the anonymous volume:
+
+```bash
+docker compose up -d --build --renew-anon-volumes api
 ```
 
 The application listens on port `5001`.
@@ -82,7 +89,8 @@ Expected response:
 ```json
 {
   "status": "ok",
-  "database": true
+  "database": true,
+  "uptime": 39.67
 }
 ```
 
@@ -100,7 +108,7 @@ The script:
 2. updates `secrets/db_password`;
 3. terminates existing connections for `app_user`.
 
-The application process is not restarted.
+The application process is not restarted: `uptime` in `/health` keeps growing after rotation.
 
 After rotation, verify the database connection:
 
@@ -113,23 +121,30 @@ The expected response remains:
 ```json
 {
   "status": "ok",
-  "database": true
+  "database": true,
+  "uptime": 39.67
 }
 ```
 
 ### Infisical
 
-Infisical is used as the external secret-management option for the additional challenge.
+Application configuration is stored in an Infisical project, so a local run does not need `.env` at all:
 
-The application must not store the database password in source code, Dockerfile, Docker image environment variables, or Git-tracked files.
-
-The secret should be provided to the application through the secret-management system instead of committing it to the repository.
-
-The local file-based secret mechanism remains available for the required password-rotation test:
-
-```text
-secrets/db_password
+```bash
+infisical run -- npm run start
 ```
+
+The project holds `PORT`, `DB_URL` and `DB_PASSWORD`.
+
+The database password is never read from the environment by the application. It is read from `secrets/db_password` on every new connection, and that is what makes rotation without a restart possible.
+
+On a fresh checkout the secret file can be materialised from Infisical:
+
+```bash
+npm run secrets:seed
+```
+
+The script refuses to overwrite an existing `secrets/db_password`: after a rotation the file holds the current password while Infisical may still hold the previous one. Pass `--force` to reset it deliberately.
 
 ### Docker
 

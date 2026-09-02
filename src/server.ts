@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config'
 import productsRouter from './routes/products.routes'
 import ordersRouter from './routes/orders.routes'
 import { errorHandler } from './middleware/error-handler'
-import { pool } from './db/pool'
+import { createPool } from './db/pool'
 import { AppConfigModule } from './config/config.module'
 import type { Env } from './config/env.schema'
 
@@ -21,6 +21,7 @@ async function bootstrap() {
     )
 
     const port = configService.get('PORT')
+    const pool = createPool(configService.get('DB_URL'))
 
     const app = express()
 
@@ -33,6 +34,7 @@ async function bootstrap() {
             res.status(200).json({
                 status: 'ok',
                 database: result.rows[0].ok === 1,
+                uptime: process.uptime(),
             })
         } catch (error) {
             console.error('Health check failed:', error)

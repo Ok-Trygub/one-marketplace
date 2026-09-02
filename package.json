@@ -21,7 +21,8 @@
     "docker:status": "docker compose ps",
     "openapi:lint": "npx @redocly/cli lint openapi/openapi.yaml",
     "openapi:bundle": "redocly bundle openapi/openapi.yaml -o spec.json",
-    "check:env": "node scripts/check-env-example.mjs"
+    "check:env": "node scripts/check-env-example.mjs",
+    "secrets:seed": "infisical run --silent -- node scripts/seed-db-password.mjs"
   },
   "devDependencies": {
     "@redocly/cli": "^2.49.0",

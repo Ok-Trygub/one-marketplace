@@ -6,7 +6,12 @@ services:
     image: my-image:prod
     container_name: my-api-container
     ports:
-      - "5000:5000"
+      - "5001:5001"
+    environment:
+      PORT: 5001
+      DB_URL: postgres://app_user@postgres:5432/marketplace
+    volumes:
+      - ./secrets:/app/secrets:ro
     depends_on:
       - postgres
 
@@ -16,6 +21,6 @@ services:
     environment:
       POSTGRES_DB: marketplace
       POSTGRES_USER: app_user
-      POSTGRES_PASSWORD: initial_password
+      POSTGRES_PASSWORD: first-pass
     ports:
       - "5432:5432"
