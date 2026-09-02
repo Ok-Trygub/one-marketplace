@@ -5,3 +5,22 @@ services:
       target: runner
     image: my-image:prod
     container_name: my-api-container
+    ports:
+      - "5001:5001"
+    environment:
+      PORT: 5001
+      DB_URL: postgres://app_user@postgres:5432/marketplace
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:17
+    container_name: marketplace-postgres
+    environment:
+      POSTGRES_DB: marketplace
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: first-pass
+    ports:
+      - "5432:5432"
