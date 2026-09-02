@@ -8,6 +8,7 @@ import productsRouter from './routes/products.routes'
 import ordersRouter from './routes/orders.routes'
 import { errorHandler } from './middleware/error-handler'
 import { createPool } from './db/pool'
+import { createLogger } from './logger'
 import { AppConfigModule } from './config/config.module'
 import type { Env } from './config/env.schema'
 
@@ -21,7 +22,12 @@ async function bootstrap() {
     )
 
     const port = configService.get('PORT')
-    const pool = createPool(configService.get('DB_URL'))
+    const logger = createLogger(configService.get('LOG_LEVEL'))
+    const pool = createPool(configService.get('DB_URL'), {
+        connectionTimeoutMillis: configService.get('TIMEOUT_MS'),
+    })
+
+    await configContext.close()
 
     const app = express()
 
@@ -37,7 +43,7 @@ async function bootstrap() {
                 uptime: process.uptime(),
             })
         } catch (error) {
-            console.error('Health check failed:', error)
+            logger.error('Health check failed:', error)
 
             res.status(503).json({
                 status: 'error',
@@ -60,8 +66,11 @@ async function bootstrap() {
     app.use(errorHandler)
 
     app.listen(port, () => {
-        console.log(`Server running on http://localhost:${port}`)
+        logger.info(`Server running on http://localhost:${port}`)
     })
 }
 
-bootstrap()
+bootstrap().catch((error) => {
+    console.error('Failed to start the application:', error)
+    process.exit(1)
+})

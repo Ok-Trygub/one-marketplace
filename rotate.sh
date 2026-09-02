@@ -2,7 +2,7 @@
 
 set -e
 
-NEW_PASSWORD="rotated_password"
+NEW_PASSWORD="$(openssl rand -hex 16)"
 
 echo "1. Changing PostgreSQL password..."
 

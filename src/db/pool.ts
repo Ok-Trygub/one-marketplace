@@ -7,7 +7,14 @@ const SECRET_FILE = path.resolve(
     'secrets/db_password'
 )
 
-export const createPool = (dbUrl: string): Pool => {
+type CreatePoolOptions = {
+    connectionTimeoutMillis: number
+}
+
+export const createPool = (
+    dbUrl: string,
+    { connectionTimeoutMillis }: CreatePoolOptions
+): Pool => {
     const { hostname, port, pathname, username } = new URL(dbUrl)
 
     const pool = new Pool({
@@ -15,6 +22,7 @@ export const createPool = (dbUrl: string): Pool => {
         port: Number(port) || 5432,
         database: pathname.slice(1),
         user: decodeURIComponent(username),
+        connectionTimeoutMillis,
 
         password: async () => {
             return (await readFile(SECRET_FILE, 'utf8')).trim()
