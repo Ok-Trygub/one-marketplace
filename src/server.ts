@@ -24,6 +24,7 @@ async function bootstrap() {
     const port = configService.get('PORT')
     const logger = createLogger(configService.get('LOG_LEVEL'))
     const pool = createPool(configService.get('DB_URL'), {
+        passwordFile: configService.get('DB_PASSWORD_FILE'),
         connectionTimeoutMillis: configService.get('TIMEOUT_MS'),
     })
 

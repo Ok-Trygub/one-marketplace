@@ -13,7 +13,7 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc",
-    "start": "node dist/src/server.js",
+    "start": "npm run build && node dist/src/server.js",
     "dev": "npm run build && node --watch dist/src/server.js",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",

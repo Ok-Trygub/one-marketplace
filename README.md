@@ -6,12 +6,17 @@ Application configuration is validated on startup using Zod through NestJS `Conf
 
 ```env
 PORT=5001
-DB_URL=postgres://app_user:initial_password@localhost:5432/marketplace
+DB_URL=postgres://app_user@localhost:5432/marketplace
+DB_PASSWORD_FILE=secrets/db_password
 LOG_LEVEL=info
 TIMEOUT_MS=5000
 ```
 
 `PORT` and `DB_URL` are required. `DB_URL` provides the host, port, database and user; the password comes from the secret file. Use `localhost` when running on the host and `postgres` when running through Compose.
+
+`DB_PASSWORD_FILE` is the path to the file with the database password, resolved from the working directory.
+
+Default: `secrets/db_password`.
 
 `LOG_LEVEL` accepts only:
 
@@ -70,10 +75,10 @@ docker compose up -d --build
 
 The application connects to PostgreSQL over the Docker network, so it runs inside Compose rather than on the host.
 
-If the container starts with an outdated `node_modules`, renew the anonymous volume:
+The development image with a bind mount and file watching lives in a separate Compose file and is not picked up automatically:
 
 ```bash
-docker compose up -d --build --renew-anon-volumes api
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 The application listens on port `5001`.

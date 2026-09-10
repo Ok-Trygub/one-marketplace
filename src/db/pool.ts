@@ -2,20 +2,17 @@ import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import path from 'node:path'
 
-const SECRET_FILE = path.resolve(
-    process.cwd(),
-    'secrets/db_password'
-)
-
 type CreatePoolOptions = {
+    passwordFile: string
     connectionTimeoutMillis: number
 }
 
 export const createPool = (
     dbUrl: string,
-    { connectionTimeoutMillis }: CreatePoolOptions
+    { passwordFile, connectionTimeoutMillis }: CreatePoolOptions
 ): Pool => {
     const { hostname, port, pathname, username } = new URL(dbUrl)
+    const secretFile = path.resolve(process.cwd(), passwordFile)
 
     const pool = new Pool({
         host: hostname,
@@ -25,7 +22,7 @@ export const createPool = (
         connectionTimeoutMillis,
 
         password: async () => {
-            return (await readFile(SECRET_FILE, 'utf8')).trim()
+            return (await readFile(secretFile, 'utf8')).trim()
         },
     })
 

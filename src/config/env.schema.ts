@@ -7,6 +7,8 @@ export const envSchema = z.object({
         protocol: /^postgres$/,
     }),
 
+    DB_PASSWORD_FILE: z.string().min(1).default('secrets/db_password'),
+
     LOG_LEVEL: z
         .enum(['debug', 'info', 'warn', 'error'])
         .default('info'),
