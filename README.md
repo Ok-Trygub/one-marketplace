@@ -1,94 +1,182 @@
-# One Marketplace API
+## Configuration
 
-REST API for a marketplace application built with Node.js, Express and TypeScript.
+### Environment variables
 
-## API
+Application configuration is validated on startup using Zod through NestJS `ConfigModule`.
 
-* `GET /products` — list products
-* `POST /products` — create a product
-* `GET /orders` — list orders
-* `POST /orders` — create an order
-* `GET /orders/{id}` — get an order by ID
-
-## Run
-
-```bash
-npm install
-npm run build
-npm start
+```env
+PORT=5001
+DB_URL=postgres://app_user:initial_password@localhost:5432/marketplace
+LOG_LEVEL=info
+TIMEOUT_MS=5000
 ```
 
-Server:
+`PORT` and `DB_URL` are required. `DB_URL` provides the host, port, database and user; the password comes from the secret file. Use `localhost` when running on the host and `postgres` when running through Compose.
+
+`LOG_LEVEL` accepts only:
+
+* `debug`
+* `info`
+* `warn`
+* `error`
+
+Default: `info`.
+
+`TIMEOUT_MS` must be a positive integer.
+
+Default: `5000`.
+
+Invalid configuration causes the application to fail during startup.
+
+The repository contains `.env.example` as the configuration contract. The real `.env` file is not committed.
+
+Check that `.env.example` matches the Zod schema:
+
+```bash
+npm run check:env
+```
+
+### PostgreSQL
+
+Start PostgreSQL:
+
+```bash
+docker compose up -d postgres
+```
+
+The local database configuration is:
 
 ```text
-http://localhost:3000
+Database: marketplace
+User: app_user
+Port: 5432
 ```
 
-## OpenAPI
-
-OpenAPI specification:
+The database password is stored in:
 
 ```text
-openapi/openapi.yaml
+secrets/db_password
 ```
 
-Bundle the specification:
+The `secrets/` directory is excluded from Git and Docker build context.
+
+### Application
+
+Start the application together with PostgreSQL:
 
 ```bash
-npx @redocly/cli bundle openapi/openapi.yaml -o spec.json
+docker compose up -d --build
 ```
 
-Lint the specification:
+The application connects to PostgreSQL over the Docker network, so it runs inside Compose rather than on the host.
+
+If the container starts with an outdated `node_modules`, renew the anonymous volume:
 
 ```bash
-npx @redocly/cli lint openapi/openapi.yaml
+docker compose up -d --build --renew-anon-volumes api
 ```
 
-## Verify
+The application listens on port `5001`.
 
-Start the server first, then run the checks below.
-
-Request without `Idempotency-Key` — expected `400` with `application/problem+json`:
+Check the health endpoint:
 
 ```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -d '{"items":[{"product_id":"laptop","quantity":1}]}'
+curl http://localhost:5001/health
 ```
 
-Request with an invalid body — expected `400` with the detail from the validator:
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "database": true,
+  "uptime": 39.67
+}
+```
+
+### Password rotation
+
+Database password rotation is performed by:
 
 ```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: order-key-1' \
-  -d '{"items":[]}'
+bash rotate.sh
 ```
 
-Valid request — expected `201`:
+The script:
+
+1. changes the PostgreSQL password using `ALTER ROLE`;
+2. updates `secrets/db_password`;
+3. terminates existing connections for `app_user`.
+
+The application process is not restarted: `uptime` in `/health` keeps growing after rotation.
+
+After rotation, verify the database connection:
 
 ```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: order-key-1' \
-  -d '{"items":[{"product_id":"laptop","quantity":1}]}'
+curl http://localhost:5001/health
 ```
 
-Repeat the valid request with the same key and the same body — expected `201` with the `Idempotency-Replay: true` header and the same order.
+The expected response remains:
 
-Repeat it with the same key and a different body — expected `422` with `application/problem+json`:
+```json
+{
+  "status": "ok",
+  "database": true,
+  "uptime": 39.67
+}
+```
+
+### Infisical
+
+Application configuration is stored in an Infisical project, so a local run does not need `.env` at all:
 
 ```bash
-curl -i -X POST http://localhost:3000/orders \
-  -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: order-key-1' \
-  -d '{"items":[{"product_id":"phone","quantity":3}]}'
+infisical run -- npm run start
 ```
 
-Check the number of operations and resources in the specification:
+The project holds `PORT`, `DB_URL` and `DB_PASSWORD`.
+
+The database password is never read from the environment by the application. It is read from `secrets/db_password` on every new connection, and that is what makes rotation without a restart possible.
+
+On a fresh checkout the secret file can be materialised from Infisical:
 
 ```bash
-npx @redocly/cli bundle openapi/openapi.yaml -o spec.json
-node -e "const s=require('./spec.json'),M=['get','post','put','patch','delete'];const ops=Object.entries(s.paths).flatMap(([p,v])=>Object.keys(v).filter(m=>M.includes(m)).map(m=>[p,m]));const idem=ops.flatMap(([p,m])=>s.paths[p][m].parameters??[]).find(x=>x.in==='header'&&/idempotency-key/i.test(x.name));console.log('operations:',ops.length,'resources:',new Set(Object.keys(s.paths).map(p=>p.split('/')[1])).size);console.log('Idempotency-Key required =',idem?.required)"
+npm run secrets:seed
 ```
 
+The script refuses to overwrite an existing `secrets/db_password`: after a rotation the file holds the current password while Infisical may still hold the previous one. Pass `--force` to reset it deliberately.
+
+### Docker
+
+Build the application image:
+
+```bash
+docker build -t myapp .
+```
+
+Local secrets are excluded from the Docker build context through `.dockerignore`.
+
+The image must not contain:
+
+```text
+.env
+secrets/
+```
+
+Verify that `.env` is absent:
+
+```bash
+docker run --rm myapp sh -c 'cat /app/.env' 2>&1
+```
+
+Verify that no database password is present in image environment variables:
+
+```bash
+docker inspect --format '{{.Config.Env}}' myapp
+```
+
+Verify that no password is present in Docker build history:
+
+```bash
+docker history --no-trunc myapp | grep -i password
+```

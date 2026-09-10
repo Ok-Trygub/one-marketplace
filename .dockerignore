@@ -10,3 +10,4 @@ Dockerfile
 docker-compose*.yml
 .idea
 .DS_Store
+secrets/
