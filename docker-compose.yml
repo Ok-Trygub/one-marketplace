@@ -4,7 +4,6 @@ services:
       context: .
       target: runner
     image: my-image:prod
-    container_name: my-api-container
     ports:
       - "5001:5001"
     environment:
@@ -17,7 +16,6 @@ services:
 
   postgres:
     image: postgres:17
-    container_name: marketplace-postgres
     environment:
       POSTGRES_DB: marketplace
       POSTGRES_USER: app_user
