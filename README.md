@@ -1,5 +1,15 @@
 ## Configuration
 
+| Variable | Source | Purpose |
+|---|---|---|
+| `PORT` | Infisical, `.env` for a local run | port the HTTP server listens on |
+| `DB_URL` | Infisical, `.env` for a local run | PostgreSQL host, port, database and user, without a password |
+| `DB_PASSWORD_FILE` | `.env`, default `secrets/db_password` | path to the file with the database password |
+| `LOG_LEVEL` | `.env`, default `info` | minimum log level |
+| `TIMEOUT_MS` | `.env`, default `5000` | database connection timeout |
+
+`.env.example` is the configuration contract with fake values. The real `.env` and `secrets/db_password` are not committed. The database password is never read from the environment.
+
 ### Environment variables
 
 Application configuration is validated on startup using Zod through NestJS `ConfigModule`.
@@ -33,8 +43,6 @@ Default: `5000`.
 
 Invalid configuration causes the application to fail during startup.
 
-The repository contains `.env.example` as the configuration contract. The real `.env` file is not committed.
-
 Check that `.env.example` matches the Zod schema:
 
 ```bash
@@ -63,7 +71,7 @@ The database password is stored in:
 secrets/db_password
 ```
 
-The `secrets/` directory is excluded from Git and Docker build context.
+The `secrets/` directory is excluded from Git and Docker build context. The development credentials of the Postgres container itself stay in `docker-compose.yml`, so a fresh clone can start the database without any secret.
 
 ### Application
 
@@ -184,4 +192,43 @@ Verify that no password is present in Docker build history:
 
 ```bash
 docker history --no-trunc myapp | grep -i password
+```
+
+## Database
+
+Main table: `orders`. Search table: `products`.
+
+Bring up the database on a fresh clone:
+
+```bash
+docker compose down -v && docker compose up -d --wait postgres
+```
+
+Connect to it:
+
+```bash
+docker compose exec postgres psql -U app_user -d marketplace
+```
+
+Run all steps in the grader order. Each SQL file is passed to `psql` inside the container through stdin:
+
+```bash
+docker compose exec -T postgres psql -U app_user -d marketplace -v ON_ERROR_STOP=1 < db/schema.sql
+docker compose exec -T postgres psql -U app_user -d marketplace -v ON_ERROR_STOP=1 < db/seed.sql
+(echo "EXPLAIN (ANALYZE, BUFFERS)"; cat db/queries/q1.sql) | docker compose exec -T postgres psql -U app_user -d marketplace
+docker compose exec -T postgres psql -U app_user -d marketplace -v ON_ERROR_STOP=1 < db/indexes.sql
+docker compose exec -T postgres psql -U app_user -d marketplace -c "ANALYZE;"
+(echo "EXPLAIN (ANALYZE, BUFFERS)"; cat db/queries/q1.sql) | docker compose exec -T postgres psql -U app_user -d marketplace
+```
+
+Repeat the two `EXPLAIN` lines for `q2.sql`, `q3.sql` and `q4.sql`. Run `q4.sql` two or three times after the indexes, the first run is cold.
+
+Files:
+
+```text
+db/schema.sql        tables, constraints, generated tsvector column
+db/seed.sql          5,000 users, 126,000 products, 200,000 orders, ~400,000 order items, VACUUM (ANALYZE)
+db/indexes.sql       composite, partial, expression and GIN indexes
+db/queries/q1..q4    real API queries, one statement per file
+db/OPTIMIZATIONS.md  EXPLAIN plans before and after, morphology section
 ```
