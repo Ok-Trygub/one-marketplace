@@ -44,7 +44,7 @@ FROM (
   CROSS JOIN generate_series(1, 5) AS copy
 ) AS person;
 
-INSERT INTO products (name, description, price)
+INSERT INTO products (name, description, price, created_at)
 SELECT
     kind.type_name || ' ' || brand.brand_name || ' ' || brand.code || '-' || (1000 + model)::text,
     kind.type_desc
@@ -58,7 +58,8 @@ SELECT
                        ])[model % 6 + 1]
     || ' Колір: ' || (ARRAY['чорний', 'білий', 'сріблястий', 'графітовий'])[model % 4 + 1]
     || '. Гарантія ' || (ARRAY['12', '24', '36'])[model % 3 + 1] || ' місяців.',
-  floor((kind.price_min + random() * (kind.price_max - kind.price_min)) / 100) * 100 - 1
+  floor((kind.price_min + random() * (kind.price_max - kind.price_min)) / 100) * 100 - 1,
+  now() - random() * interval '1095 days'
 FROM (VALUES
     ('Холодильник', 'Двокамерний холодильник з системою No Frost і зоною свіжості для овочів.', 15000, 45000),
     ('Морозильна камера', 'Вертикальна морозильна камера з шухлядами і швидким заморожуванням.', 12000, 30000),

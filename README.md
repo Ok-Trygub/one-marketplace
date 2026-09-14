@@ -228,7 +228,7 @@ Files:
 ```text
 db/schema.sql        tables, constraints, generated tsvector column
 db/seed.sql          5,000 users, 126,000 products, 200,000 orders, ~400,000 order items, VACUUM (ANALYZE)
-db/indexes.sql       composite, partial, expression and GIN indexes
+db/indexes.sql       composite, partial, expression and GIN indexes plus two foreign key indexes on order_items
 db/queries/q1..q4    real API queries, one statement per file
-db/OPTIMIZATIONS.md  EXPLAIN plans before and after, morphology section
+db/OPTIMIZATIONS.md  EXPLAIN plans before and after, foreign key indexes, morphology section
 ```
