@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AddStockBalanceTasks1789727101052 implements MigrationInterface {
-    name = 'AddStockBalanceTasks1789727101052'
+export class AddStockBalanceJobs1789729167278 implements MigrationInterface {
+    name = 'AddStockBalanceJobs1789729167278'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`CREATE TABLE "jobs" ("id" bigint GENERATED ALWAYS AS IDENTITY NOT NULL, "type" text NOT NULL, "payload" jsonb NOT NULL, "status" text NOT NULL DEFAULT 'pending', "processed" integer NOT NULL DEFAULT '0', "worker" text, "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "processed_at" TIMESTAMP WITH TIME ZONE, CONSTRAINT "jobs_processed_check" CHECK (processed >= 0), CONSTRAINT "jobs_status_check" CHECK (status IN ('pending', 'done')), CONSTRAINT "PK_cf0a6c42b72fcc7f7c237def345" PRIMARY KEY ("id"))`);

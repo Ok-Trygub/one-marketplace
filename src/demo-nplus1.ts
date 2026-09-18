@@ -101,7 +101,7 @@ const main = async () => {
 
         const results = []
 
-        for (const size of [3, allIds.length]) {
+        for (const size of [3, 7]) {
             const ids = allIds.slice(0, size)
 
             results.push({

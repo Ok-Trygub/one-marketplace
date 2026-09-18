@@ -14,7 +14,11 @@ export type CheckoutResult = {
     total: number
 }
 
-export type CheckoutFailure = 'OUT_OF_STOCK' | 'INSUFFICIENT_FUNDS'
+export type CheckoutFailure =
+    | 'PRODUCT_NOT_FOUND'
+    | 'OUT_OF_STOCK'
+    | 'USER_NOT_FOUND'
+    | 'INSUFFICIENT_FUNDS'
 
 export class CheckoutError extends Error {
     readonly reason: CheckoutFailure
@@ -28,17 +32,17 @@ export class CheckoutError extends Error {
 
 type UpdateReturning<Row> = [Row[], number]
 
-export const checkout = (
+export const checkout = async (
     dataSource: DataSource,
     input: CheckoutInput,
-): Promise<CheckoutResult> =>
-    dataSource.transaction(async (manager) => {
-        const { userId, productId, quantity } = input
+): Promise<CheckoutResult> => {
+    const { userId, productId, quantity } = input
 
-        if (!Number.isInteger(quantity) || quantity <= 0) {
-            throw new Error('quantity must be a positive integer')
-        }
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error('quantity must be a positive integer')
+    }
 
+    return dataSource.transaction(async (manager) => {
         const [products] = await manager.query<UpdateReturning<{ price: number }>>(
             `UPDATE products
              SET stock = stock - $1
@@ -50,7 +54,12 @@ export const checkout = (
         const product = products[0]
 
         if (!product) {
-            throw new CheckoutError('OUT_OF_STOCK')
+            const found = await manager.query<unknown[]>(
+                'SELECT 1 FROM products WHERE id = $1',
+                [productId],
+            )
+
+            throw new CheckoutError(found.length > 0 ? 'OUT_OF_STOCK' : 'PRODUCT_NOT_FOUND')
         }
 
         const total = product.price * quantity
@@ -64,7 +73,12 @@ export const checkout = (
         )
 
         if (!users[0]) {
-            throw new CheckoutError('INSUFFICIENT_FUNDS')
+            const found = await manager.query<unknown[]>(
+                'SELECT 1 FROM users WHERE id = $1',
+                [userId],
+            )
+
+            throw new CheckoutError(found.length > 0 ? 'INSUFFICIENT_FUNDS' : 'USER_NOT_FOUND')
         }
 
         const order = await manager.save(
@@ -89,3 +103,4 @@ export const checkout = (
 
         return { orderId: order.id, total }
     })
+}
