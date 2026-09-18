@@ -15,7 +15,7 @@ import { OrderItem } from './order-item.entity'
 @Entity({ name: 'orders' })
 @Check('orders_status_check', "status IN ('pending', 'paid', 'cancelled')")
 @Check('orders_total_check', 'total >= 0')
-@Index('orders_user_id_created_at_idx', ['userId', 'createdAt'])
+@Index('orders_user_id_created_at_idx', ['userId', 'createdAt'], { unique: true })
 @Index('orders_cancelled_created_at_idx', ['createdAt'], {
     where: "status = 'cancelled'",
 })

@@ -20,7 +20,7 @@ export class Product {
     })
     id!: string
 
-    @Column({ type: 'text' })
+    @Column({ type: 'text', unique: true })
     name!: string
 
     @Column({ type: 'text' })
@@ -42,6 +42,7 @@ export class Product {
         asExpression: "to_tsvector('simple', name || ' ' || description)",
         insert: false,
         update: false,
+        select: false,
     })
     searchVector!: string
 

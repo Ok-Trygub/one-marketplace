@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import type { DeepPartial, FindOptionsWhere, ObjectLiteral, Repository } from 'typeorm'
+import type { FindOptionsWhere, ObjectLiteral, QueryDeepPartialEntity, Repository } from 'typeorm'
 import { AppDataSource } from './data-source'
 import { User } from './entities/user.entity'
 import { Product } from './entities/product.entity'
@@ -102,18 +102,29 @@ const orders: OrderSeed[] = [
     },
 ]
 
+const insertIfMissing = async <T extends ObjectLiteral>(
+    repository: Repository<T>,
+    values: NoInfer<QueryDeepPartialEntity<T>>,
+): Promise<{ id: string } | undefined> => {
+    const result = await repository
+        .createQueryBuilder()
+        .insert()
+        .values(values)
+        .orIgnore()
+        .returning(['id'])
+        .execute()
+
+    return result.raw[0]
+}
+
 const ensure = async <T extends ObjectLiteral>(
     repository: Repository<T>,
     where: FindOptionsWhere<T>,
-    values: NoInfer<DeepPartial<T>>,
+    values: NoInfer<QueryDeepPartialEntity<T>>,
 ): Promise<T> => {
-    const existing = await repository.findOneBy(where)
+    await insertIfMissing(repository, values)
 
-    if (existing) {
-        return existing
-    }
-
-    return repository.save(repository.create(values))
+    return repository.findOneByOrFail(where)
 }
 
 const pick = <T>(map: Map<string, T>, key: string): T => {
@@ -176,24 +187,27 @@ const main = async () => {
                 0,
             )
 
-            const order = await ensure(
-                orderRepository,
-                { userId: user.id, createdAt },
-                { userId: user.id, status: seed.status, total, createdAt },
-            )
+            await AppDataSource.transaction(async (manager) => {
+                const order = await insertIfMissing(manager.getRepository(Order), {
+                    userId: user.id,
+                    status: seed.status,
+                    total,
+                    createdAt,
+                })
 
-            for (const line of lines) {
-                await ensure(
-                    orderItemRepository,
-                    { orderId: order.id, productId: line.product.id },
-                    {
+                if (!order) {
+                    return
+                }
+
+                await manager.getRepository(OrderItem).insert(
+                    lines.map((line) => ({
                         orderId: order.id,
                         productId: line.product.id,
                         quantity: line.quantity,
                         unitPrice: line.unitPrice,
-                    },
+                    })),
                 )
-            }
+            })
         }
 
         console.log({
