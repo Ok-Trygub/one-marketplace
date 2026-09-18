@@ -257,11 +257,11 @@ npm run report
 
 ### Indexes
 
-Five of the six indexes from `db/indexes.sql` are declared on the entities. The expression index `users (lower(email))` is replaced by the check constraint `email = lower(email)`: TypeORM cannot declare expression indexes, so emails are stored lowercased and `WHERE email = lower($1)` is served by the unique index on `email`. `@Index` cannot express `DESC` either, so the two `created_at` indexes are ascending; a B-tree is scanned backwards at the same cost.
+Five of the six indexes from `db/indexes.sql` are declared on the entities; `orders (user_id, created_at)` is unique. The expression index `users (lower(email))` is replaced by the check constraint `email = lower(email)`: TypeORM cannot declare expression indexes, so emails are stored lowercased and `WHERE email = lower($1)` is served by the unique index on `email`. `@Index` cannot express `DESC` either, so the two `created_at` indexes are ascending; a B-tree is scanned backwards at the same cost.
 
 ### Seed
 
-`npm run seed` is idempotent. Row counts after any number of runs:
+`npm run seed` is idempotent, including two runs in parallel. Every natural key is backed by a unique constraint: `users.email`, `products.name`, `orders (user_id, created_at)`. Rows are inserted with `ON CONFLICT DO NOTHING`, and an order is inserted together with its items in one transaction. Row counts after any number of runs:
 
 ```bash
 docker compose exec postgres psql -U app_user -d marketplace -c "SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM products) AS products, (SELECT count(*) FROM orders) AS orders, (SELECT count(*) FROM order_items) AS order_items"
@@ -287,7 +287,7 @@ Naive is `1 + N + M` where `M` is the number of order items. The fixed variants 
 
 ### Repository vs QueryBuilder
 
-`npm run report` prints revenue per product across paid orders through `createQueryBuilder().getRawMany()` with `JOIN`, `SUM` and `GROUP BY`. `Repository` is used whenever the result is a set of entities: reading, writing and loading relations. `QueryBuilder` is used whenever the result is not an entity: aggregates, grouping, raw rows.
+`npm run report` prints revenue per product across paid orders through `createQueryBuilder().getRawMany()` with `JOIN`, `SUM` and `GROUP BY`. `Repository` is used whenever the result is a set of entities: reading, writing and loading relations. `QueryBuilder` is used whenever the result is not an entity: aggregates, grouping, raw rows. `SUM` comes back as a `bigint` string, so the report formats money through `BigInt` and never through `Number`.
 
 ## Grading
 

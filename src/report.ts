@@ -9,6 +9,14 @@ type RevenueRow = {
     revenue: string
 }
 
+const formatUah = (kopiykas: string): string => {
+    const value = BigInt(kopiykas)
+    const hryvnias = value / 100n
+    const rest = (value % 100n).toString().padStart(2, '0')
+
+    return `${hryvnias}.${rest}`
+}
+
 const main = async () => {
     await AppDataSource.initialize()
 
@@ -30,8 +38,8 @@ const main = async () => {
         console.table(
             rows.map((row) => ({
                 product: row.productName,
-                unitsSold: Number(row.unitsSold),
-                revenueUah: (Number(row.revenue) / 100).toFixed(2),
+                unitsSold: row.unitsSold,
+                revenueUah: formatUah(row.revenue),
             })),
         )
     } finally {
