@@ -11,6 +11,7 @@ import { Order } from './order.entity'
 @Entity({ name: 'users' })
 @Check('users_phone_check', "phone ~ '^\\+380\\d{9}$'")
 @Check('users_email_lower_check', 'email = lower(email)')
+@Check('users_balance_check', 'balance >= 0')
 export class User {
     @PrimaryGeneratedColumn('identity', {
         type: 'bigint',
@@ -26,6 +27,9 @@ export class User {
 
     @Column({ type: 'text' })
     name!: string
+
+    @Column({ type: 'integer', default: 0 })
+    balance!: number
 
     @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
     createdAt!: Date

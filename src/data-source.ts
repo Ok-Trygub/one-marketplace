@@ -5,6 +5,7 @@ import { User } from './entities/user.entity'
 import { Product } from './entities/product.entity'
 import { Order } from './entities/order.entity'
 import { OrderItem } from './entities/order-item.entity'
+import {Job} from "./entities/job.entity";
 
 const env = (name: string): string => {
     const value = process.env[name]
@@ -23,7 +24,7 @@ export const AppDataSource = new DataSource({
     username: env('DB_USER'),
     password: env('DB_PASSWORD'),
     database: env('DB_NAME'),
-    entities: [User, Product, Order, OrderItem],
+    entities: [User, Product, Order, OrderItem, Job],
     migrations: [path.join(__dirname, 'migrations', '*.js')],
     synchronize: false,
 })
