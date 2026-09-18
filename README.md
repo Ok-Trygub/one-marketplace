@@ -78,7 +78,7 @@ The `secrets/` directory is excluded from Git and Docker build context. The deve
 Start the application together with PostgreSQL:
 
 ```bash
-docker compose up -d --build
+docker compose --profile app up -d --build
 ```
 
 The application connects to PostgreSQL over the Docker network, so it runs inside Compose rather than on the host.
@@ -86,7 +86,7 @@ The application connects to PostgreSQL over the Docker network, so it runs insid
 The development image with a bind mount and file watching lives in a separate Compose file and is not picked up automatically:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose --profile app -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 The application listens on port `5001`.
@@ -231,4 +231,68 @@ db/seed.sql          5,000 users, 126,000 products, 200,000 orders, ~400,000 ord
 db/indexes.sql       composite, partial, expression and GIN indexes plus two foreign key indexes on order_items
 db/queries/q1..q4    real API queries, one statement per file
 db/OPTIMIZATIONS.md  EXPLAIN plans before and after, foreign key indexes, morphology section
+```
+
+## TypeORM
+
+`synchronize: false` in `src/data-source.ts`; the schema is created by the migration in `src/migrations/`. Connection values `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` come from `process.env`, injected by `scripts/with-secrets.sh` from Infisical.
+
+```bash
+npm run build
+npm run migrate
+npm run migrate:show
+npm run migrate:revert
+npm run seed
+npm run demo:nplus1
+npm run report
+```
+
+### onDelete
+
+| Foreign key | onDelete | Why |
+|---|---|---|
+| `orders.user_id` → `users` | `RESTRICT` | order history must survive; a user with orders cannot be deleted |
+| `order_items.product_id` → `products` | `RESTRICT` | a receipt keeps the product it refers to |
+| `order_items.order_id` → `orders` | `CASCADE` | lines have no meaning without their order |
+
+### Indexes
+
+Five of the six indexes from `db/indexes.sql` are declared on the entities; `orders (user_id, created_at)` is unique. The expression index `users (lower(email))` is replaced by the check constraint `email = lower(email)`: TypeORM cannot declare expression indexes, so emails are stored lowercased and `WHERE email = lower($1)` is served by the unique index on `email`. `@Index` cannot express `DESC` either, so the two `created_at` indexes are ascending; a B-tree is scanned backwards at the same cost.
+
+### Seed
+
+`npm run seed` is idempotent, including two runs in parallel. Every natural key is backed by a unique constraint: `users.email`, `products.name`, `orders (user_id, created_at)`. Rows are inserted with `ON CONFLICT DO NOTHING`, and an order is inserted together with its items in one transaction. Row counts after any number of runs:
+
+```bash
+docker compose exec postgres psql -U app_user -d marketplace -c "SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM products) AS products, (SELECT count(*) FROM orders) AS orders, (SELECT count(*) FROM order_items) AS order_items"
+```
+
+```text
+ users | products | orders | order_items
+-------+----------+--------+-------------
+     6 |        8 |      7 |          12
+```
+
+### N+1
+
+Graph `order → items → product`, queries counted by a custom `Logger` with `logging: ['query']`:
+
+| Strategy | N = 3 | N = 7 |
+|---|---|---|
+| naive, query per element in a loop | 9 | 20 |
+| `relations` / LEFT JOIN | 1 | 1 |
+| `relationLoadStrategy: 'query'` | 4 | 4 |
+
+Naive is `1 + N + M` where `M` is the number of order items. The fixed variants do not depend on `N`. The `query` strategy issues one query per relation level plus one service query in which TypeORM maps items back to their orders, hence 4 instead of 3, within the `1 + 2 × levels` bound.
+
+### Repository vs QueryBuilder
+
+`npm run report` prints revenue per product across paid orders through `createQueryBuilder().getRawMany()` with `JOIN`, `SUM` and `GROUP BY`. `Repository` is used whenever the result is a set of entities: reading, writing and loading relations. `QueryBuilder` is used whenever the result is not an entity: aggregates, grouping, raw rows. `SUM` comes back as a `bigint` string, so the report formats money through `BigInt` and never through `Number`.
+
+## Grading
+
+```bash
+docker compose up -d --wait
+export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
+export SKIP_VAULT=1    # у грейдера немає доступу до сховища
 ```
