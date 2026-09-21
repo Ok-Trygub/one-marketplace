@@ -15,24 +15,27 @@ type OrderSeed = {
     items: { product: string; quantity: number }[]
 }
 
+const INITIAL_BALANCE = 1_000_000_000
+const INITIAL_STOCK = 10
+
 const users = [
-    { email: 'olena.shevchenko@gmail.com', phone: '+380501000001', name: 'Олена Шевченко' },
-    { email: 'andrii.bondarenko@ukr.net', phone: '+380671000002', name: 'Андрій Бондаренко' },
-    { email: 'iryna.kovalenko@gmail.com', phone: '+380931000003', name: 'Ірина Коваленко' },
-    { email: 'dmytro.tkachenko@i.ua', phone: '+380961000004', name: 'Дмитро Ткаченко' },
-    { email: 'nataliia.kravchenko@gmail.com', phone: '+380661000005', name: 'Наталія Кравченко' },
-    { email: 'taras.oliinyk@outlook.com', phone: '+380731000006', name: 'Тарас Олійник' },
+    { email: 'olena.shevchenko@gmail.com', phone: '+380501000001', name: 'Олена Шевченко', balance: INITIAL_BALANCE },
+    { email: 'andrii.bondarenko@ukr.net', phone: '+380671000002', name: 'Андрій Бондаренко', balance: INITIAL_BALANCE },
+    { email: 'iryna.kovalenko@gmail.com', phone: '+380931000003', name: 'Ірина Коваленко', balance: INITIAL_BALANCE },
+    { email: 'dmytro.tkachenko@i.ua', phone: '+380961000004', name: 'Дмитро Ткаченко', balance: INITIAL_BALANCE },
+    { email: 'nataliia.kravchenko@gmail.com', phone: '+380661000005', name: 'Наталія Кравченко', balance: INITIAL_BALANCE },
+    { email: 'taras.oliinyk@outlook.com', phone: '+380731000006', name: 'Тарас Олійник', balance: INITIAL_BALANCE },
 ]
 
 const products = [
-    { name: 'Холодильник Samsung SM-1001', description: 'Двокамерний холодильник з системою No Frost і зоною свіжості для овочів. Колір: сріблястий. Гарантія 24 місяці.', price: 2899900 },
-    { name: 'Пральна машина Bosch BS-1002', description: 'Пральна машина з фронтальним завантаженням і інверторним двигуном. Тихий режим роботи. Гарантія 36 місяців.', price: 1849900 },
-    { name: 'Робот-пилосос Xiaomi MI-1003', description: 'Робот-пилосос з лазерною навігацією, побудовою карти і станцією самоочищення. Керування через мобільний застосунок.', price: 1299900 },
-    { name: 'Кавомашина Philips PH-1004', description: 'Автоматична кавомашина з вбудованою кавомолкою і капучинатором. Сенсорна панель керування.', price: 2199900 },
-    { name: 'Телевізор LG LG-1005', description: 'Телевізор з роздільною здатністю 4K, підтримкою HDR і голосовим керуванням. Діагональ 55 дюймів.', price: 2499900 },
-    { name: 'Ноутбук Lenovo LN-1006', description: 'Ноутбук з екраном 15,6 дюйма, швидким накопичувачем і легким корпусом для роботи.', price: 3999900 },
-    { name: 'Навушники Sony SN-1007', description: 'Бездротові навушники з активним шумозаглушенням і автономністю до 30 годин.', price: 899900 },
-    { name: 'Електрочайник Tefal TF-1008', description: 'Електрочайник зі скла на 1,7 літра з підсвічуванням і захистом від перегріву.', price: 149900 },
+    { name: 'Холодильник Samsung SM-1001', description: 'Двокамерний холодильник з системою No Frost і зоною свіжості для овочів. Колір: сріблястий. Гарантія 24 місяці.', price: 2899900, stock: INITIAL_STOCK },
+    { name: 'Пральна машина Bosch BS-1002', description: 'Пральна машина з фронтальним завантаженням і інверторним двигуном. Тихий режим роботи. Гарантія 36 місяців.', price: 1849900, stock: INITIAL_STOCK },
+    { name: 'Робот-пилосос Xiaomi MI-1003', description: 'Робот-пилосос з лазерною навігацією, побудовою карти і станцією самоочищення. Керування через мобільний застосунок.', price: 1299900, stock: INITIAL_STOCK },
+    { name: 'Кавомашина Philips PH-1004', description: 'Автоматична кавомашина з вбудованою кавомолкою і капучинатором. Сенсорна панель керування.', price: 2199900, stock: INITIAL_STOCK },
+    { name: 'Телевізор LG LG-1005', description: 'Телевізор з роздільною здатністю 4K, підтримкою HDR і голосовим керуванням. Діагональ 55 дюймів.', price: 2499900, stock: INITIAL_STOCK },
+    { name: 'Ноутбук Lenovo LN-1006', description: 'Ноутбук з екраном 15,6 дюйма, швидким накопичувачем і легким корпусом для роботи.', price: 3999900, stock: INITIAL_STOCK },
+    { name: 'Навушники Sony SN-1007', description: 'Бездротові навушники з активним шумозаглушенням і автономністю до 30 годин.', price: 899900, stock: INITIAL_STOCK },
+    { name: 'Електрочайник Tefal TF-1008', description: 'Електрочайник зі скла на 1,7 літра з підсвічуванням і захистом від перегріву.', price: 149900, stock: INITIAL_STOCK },
 ]
 
 const orders: OrderSeed[] = [
@@ -148,6 +151,11 @@ const main = async () => {
         for (const seed of users) {
             const user = await ensure(userRepository, { email: seed.email }, seed)
 
+            if (user.balance !== seed.balance) {
+                await userRepository.update({ id: user.id }, { balance: seed.balance })
+                user.balance = seed.balance
+            }
+
             usersByEmail.set(seed.email, user)
         }
 
@@ -155,6 +163,11 @@ const main = async () => {
 
         for (const seed of products) {
             const product = await ensure(productRepository, { name: seed.name }, seed)
+
+            if (product.stock !== seed.stock) {
+                await productRepository.update({ id: product.id }, { stock: seed.stock })
+                product.stock = seed.stock
+            }
 
             productsByName.set(seed.name, product)
         }

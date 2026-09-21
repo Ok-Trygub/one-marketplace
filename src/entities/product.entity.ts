@@ -11,6 +11,7 @@ import { OrderItem } from './order-item.entity'
 
 @Entity({ name: 'products' })
 @Check('products_price_check', 'price > 0')
+@Check('products_stock_check', 'stock >= 0')
 @Index('idx_products_search_vector', ['searchVector'], { type: 'gin' })
 export class Product {
     @PrimaryGeneratedColumn('identity', {
@@ -27,6 +28,9 @@ export class Product {
 
     @Column({ type: 'integer' })
     price!: number
+
+    @Column({ type: 'integer', default: 0 })
+    stock!: number
 
     @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
     createdAt!: Date
