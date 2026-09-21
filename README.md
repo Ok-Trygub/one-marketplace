@@ -300,7 +300,7 @@ npm run demo:retry
 | Demo | My run |
 |---|---|
 | `demo:race` | 50 parallel checkouts on `stock = 10`: 10 succeeded, final stock 0, rows with negative stock 0 |
-| `demo:workers` | 40 jobs, 4 workers, 10 each, processed twice 0, 1094 ms against 4000 ms sequentially |
+| `demo:workers` | own queue per run: 20 regular jobs and 1 poison job, 4 workers, 5 each, processed twice 0, poison job marked `failed` after 3 attempts while all workers keep running, 539 ms against 2000 ms sequentially |
 | `demo:retry` | 3 concurrent debits under `REPEATABLE READ`: 3 caught `40001`, each retried, final balance 970000 as expected |
 
 **Atomic UPDATE vs pessimistic lock.** Checkout uses `UPDATE ... SET stock = stock - $1 WHERE id = $2 AND stock >= $1 RETURNING`. The check, the change and the row lock are one statement, so there is no window between reading and writing; zero returned rows means sold out and the transaction rolls back as a whole. `SELECT ... FOR UPDATE` is equally safe but costs an extra round trip, holds the lock longer and leaves application code between the read and the write. Checkout does not need the row data to decide, so the atomic form is used.
@@ -313,4 +313,11 @@ npm run demo:retry
 docker compose up -d --wait
 export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
 export SKIP_VAULT=1    # у грейдера немає доступу до сховища
+npm ci
+npm run build
+npm run migrate
+npm run seed
+npm run demo:race
+npm run demo:workers
+npm run demo:retry
 ```
