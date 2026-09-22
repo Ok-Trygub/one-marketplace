@@ -14,7 +14,13 @@ echo "2. Updating secret file..."
 
 printf '%s\n' "$NEW_PASSWORD" > secrets/db_password
 
-echo "3. Terminating old PostgreSQL connections..."
+echo "3. Updating PgBouncer userlist and restarting the pooler..."
+
+printf '"app_user" "%s"\n' "$NEW_PASSWORD" > pgbouncer/userlist.txt
+
+docker compose restart pgbouncer
+
+echo "4. Terminating old PostgreSQL connections..."
 
 docker compose exec -T postgres \
   psql -U app_user -d marketplace \
