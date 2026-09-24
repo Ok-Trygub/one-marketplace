@@ -355,6 +355,54 @@ docker compose exec -T postgres pg_restore --no-owner --no-privileges -U app_use
 
 The host `pg_restore` may be older than the server, so archive inspection and restores run inside the container.
 
+## Тестування
+
+```bash
+npm run test:integration   # repositories against postgres:16-alpine started by testcontainers
+npm run test:e2e           # full Nest application through supertest, database from a testcontainer
+npm run test:contract      # Pact consumer test, writes pacts/marketplace-frontend-marketplace-api.json
+npm run verify:provider    # Pact provider verification of the real application
+```
+
+Docker must be running: every suite starts its own Postgres container from the test code. Tests are compiled by `tsc` together with the application and run from `dist/test`; `jest.config.js` sets `reporters: ['default']` and `maxWorkers: 1`.
+
+**Isolation.** Every test file starts its own container and runs the migrations, and `TRUNCATE ... RESTART IDENTITY CASCADE` clears all tables before each test. A transaction-with-rollback strategy would not work here: checkout and the worker open their own transactions through `dataSource.transaction`, and TypeORM would commit them independently of the test transaction. Truncating five small tables costs milliseconds, and a fresh container per file keeps files independent, so the suite is green on any number of consecutive runs. Test data comes from builders in `test/integration/testkit/builders.ts` (`aUser`, `aProduct`, `anOrder`) with unique defaults.
+
+**Contract.** The consumer `marketplace-frontend` describes two interactions of `marketplace-api`: `GET /orders/{id}` under the state `order with id 1 exists` and `GET /products` under `products exist`. Both paths come from `openapi/openapi.yaml`. The generated contract in `pacts/` is committed. `verify:provider` starts the real application on a random port with a testcontainer database, seeds the provider states with `INSERT ... ON CONFLICT DO NOTHING` and verifies every interaction. Without `PACT_BROKER_URL` it reads the local pact file; with it, it fetches the contract from the broker and publishes the result (`publishVerificationResult: true`). The code reads only `process.env.PACT_BROKER_URL` and `process.env.PACT_BROKER_TOKEN`; the token is sent only when set, the local broker has no authentication.
+
+Two ways to run the verification against the broker:
+
+```bash
+bash scripts/with-secrets.sh dev npm run verify:provider          # primary: PACT_BROKER_URL comes from the vault
+PACT_BROKER_URL=http://127.0.0.1:9292 npm run verify:provider     # grader form: the value is passed directly
+```
+
+**Broker locally.** `docker compose up -d --wait` starts `pact-broker` on `http://127.0.0.1:9292` next to Postgres and PgBouncer; it keeps its data in an SQLite file inside the container. The gate sequence, run for version `5d8984d` (the git short sha, used for both pacticipants):
+
+```bash
+export PACT_BROKER_URL=http://127.0.0.1:9292
+export PACT_VERSION=$(git rev-parse --short HEAD)
+curl -X PUT "$PACT_BROKER_URL/pacts/provider/marketplace-api/consumer/marketplace-frontend/version/$PACT_VERSION" -H 'Content-Type: application/json' --data-binary @pacts/marketplace-frontend-marketplace-api.json
+npm run verify:provider
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
+curl -X PUT "$PACT_BROKER_URL/pacticipants/marketplace-api/versions/$PACT_VERSION/tags/prod" -H 'Content-Type: application/json'
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
+```
+
+can-i-deploy before the `prod` tag:
+
+```json
+{"summary":{"deployable":null,"reason":"There is no verified pact between version 5d8984d of marketplace-frontend and the latest version of marketplace-api with tag prod (no such version exists)","success":0,"failed":0,"unknown":1}}
+```
+
+can-i-deploy after the `prod` tag:
+
+```json
+{"summary":{"deployable":true,"reason":"All required verification results are published and successful","success":1,"failed":0,"unknown":0}}
+```
+
+**CI.** `.github/workflows/contract.yml` runs the job `contract` on every push and pull request: broker from compose, `test:contract`, publish, `verify:provider` with `PACT_VERSION=${{ github.sha }}`, then a can-i-deploy step that queries the broker matrix for both pacticipant versions and fails the job unless `deployable` is `true`. `PACT_BROKER_URL` and `PACT_BROKER_TOKEN` come from GitHub secrets, with the local compose address as the default.
+
 ## Grading
 
 ```bash
@@ -371,4 +419,14 @@ npm run demo:workers
 npm run demo:retry
 bash scripts/with-secrets.sh dev bash scripts/backup.sh
 bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
+npm run test:integration
+npm run test:e2e
+npm run test:contract
+export PACT_BROKER_URL=http://127.0.0.1:9292
+export PACT_VERSION=$(git rev-parse --short HEAD)
+curl -X PUT "$PACT_BROKER_URL/pacts/provider/marketplace-api/consumer/marketplace-frontend/version/$PACT_VERSION" -H 'Content-Type: application/json' --data-binary @pacts/marketplace-frontend-marketplace-api.json
+bash scripts/with-secrets.sh dev npm run verify:provider
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
+curl -X PUT "$PACT_BROKER_URL/pacticipants/marketplace-api/versions/$PACT_VERSION/tags/prod" -H 'Content-Type: application/json'
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
 ```
