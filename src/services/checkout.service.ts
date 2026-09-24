@@ -3,10 +3,14 @@ import { Order } from '../entities/order.entity'
 import { OrderItem } from '../entities/order-item.entity'
 import { Job } from '../entities/job.entity'
 
-export type CheckoutInput = {
-    userId: string
+export type CheckoutLine = {
     productId: string
     quantity: number
+}
+
+export type CheckoutInput = {
+    userId: string
+    items: CheckoutLine[]
 }
 
 export type CheckoutResult = {
@@ -22,47 +26,69 @@ export type CheckoutFailure =
 
 export class CheckoutError extends Error {
     readonly reason: CheckoutFailure
+    readonly productId?: string
 
-    constructor(reason: CheckoutFailure) {
-        super(reason)
+    constructor(reason: CheckoutFailure, productId?: string) {
+        super(productId ? `${reason}: product ${productId}` : reason)
         this.name = 'CheckoutError'
         this.reason = reason
+        this.productId = productId
     }
 }
 
 type UpdateReturning<Row> = [Row[], number]
 
+const validateLines = (items: CheckoutLine[]): CheckoutLine[] => {
+    if (items.length === 0) {
+        throw new Error('items must not be empty')
+    }
+
+    for (const item of items) {
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+            throw new Error('quantity must be a positive integer')
+        }
+    }
+
+    return [...items].sort((a, b) => Number(a.productId) - Number(b.productId))
+}
+
 export const checkout = async (
     dataSource: DataSource,
     input: CheckoutInput,
 ): Promise<CheckoutResult> => {
-    const { userId, productId, quantity } = input
-
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-        throw new Error('quantity must be a positive integer')
-    }
+    const { userId } = input
+    const lines = validateLines(input.items)
 
     return dataSource.transaction(async (manager) => {
-        const [products] = await manager.query<UpdateReturning<{ price: number }>>(
-            `UPDATE products
-             SET stock = stock - $1
-             WHERE id = $2 AND stock >= $1
-             RETURNING price`,
-            [quantity, productId],
-        )
+        const priced: { productId: string; quantity: number; unitPrice: number }[] = []
 
-        const product = products[0]
-
-        if (!product) {
-            const found = await manager.query<unknown[]>(
-                'SELECT 1 FROM products WHERE id = $1',
-                [productId],
+        for (const line of lines) {
+            const [rows] = await manager.query<UpdateReturning<{ price: number }>>(
+                `UPDATE products
+                 SET stock = stock - $1
+                 WHERE id = $2 AND stock >= $1
+                 RETURNING price`,
+                [line.quantity, line.productId],
             )
 
-            throw new CheckoutError(found.length > 0 ? 'OUT_OF_STOCK' : 'PRODUCT_NOT_FOUND')
+            const product = rows[0]
+
+            if (!product) {
+                const found = await manager.query<unknown[]>(
+                    'SELECT 1 FROM products WHERE id = $1',
+                    [line.productId],
+                )
+
+                throw new CheckoutError(
+                    found.length > 0 ? 'OUT_OF_STOCK' : 'PRODUCT_NOT_FOUND',
+                    line.productId,
+                )
+            }
+
+            priced.push({ ...line, unitPrice: product.price })
         }
 
-        const total = product.price * quantity
+        const total = priced.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0)
 
         const [users] = await manager.query<UpdateReturning<{ balance: number }>>(
             `UPDATE users
@@ -85,13 +111,14 @@ export const checkout = async (
             manager.create(Order, { userId, status: 'paid', total }),
         )
 
-        await manager.save(
-            manager.create(OrderItem, {
+        await manager.insert(
+            OrderItem,
+            priced.map((line) => ({
                 orderId: order.id,
-                productId,
-                quantity,
-                unitPrice: product.price,
-            }),
+                productId: line.productId,
+                quantity: line.quantity,
+                unitPrice: line.unitPrice,
+            })),
         )
 
         await manager.save(

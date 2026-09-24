@@ -33,7 +33,7 @@ const buyers = Array.from({ length: ATTEMPTS }, (_, index) => {
 
 const attempt = async (userId: string, productId: string): Promise<Outcome> => {
     try {
-        await checkout(dataSource, { userId, productId, quantity: 1 })
+        await checkout(dataSource, { userId, items: [{ productId, quantity: 1 }] })
 
         return 'SUCCESS'
     } catch (error) {

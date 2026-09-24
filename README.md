@@ -3,7 +3,8 @@
 | Variable | Source | Purpose |
 |---|---|---|
 | `PORT` | Infisical, `.env` for a local run | port the HTTP server listens on |
-| `DB_URL` | Infisical, `.env` for a local run | PostgreSQL host, port, database and user, without a password |
+| `DB_URL` | Infisical, `.env` for a local run | PgBouncer host, port, database and user, without a password |
+| `DATABASE_URL` | Infisical | full connection string through PgBouncer for `scripts/backup.sh` and `scripts/restore-drill.sh` |
 | `DB_PASSWORD_FILE` | `.env`, default `secrets/db_password` | path to the file with the database password |
 | `LOG_LEVEL` | `.env`, default `info` | minimum log level |
 | `TIMEOUT_MS` | `.env`, default `5000` | database connection timeout |
@@ -49,29 +50,38 @@ Check that `.env.example` matches the Zod schema:
 npm run check:env
 ```
 
-### PostgreSQL
+### PostgreSQL and PgBouncer
 
-Start PostgreSQL:
+Start the database stack:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d --wait
 ```
 
-The local database configuration is:
+This starts Postgres and PgBouncer in front of it. The application, TypeORM and every demo connect to PgBouncer on port `6432`; Postgres on port `5432` stays published for backups and debugging.
 
 ```text
 Database: marketplace
 User: app_user
-Port: 5432
+PgBouncer: 127.0.0.1:6432
+Postgres: 127.0.0.1:5432
 ```
 
-The database password is stored in:
+PgBouncer config lives in `pgbouncer/pgbouncer.ini`, the user list in `pgbouncer/userlist.txt`. The user list holds the development password from `docker-compose.yml`; in production it is generated from the vault at deploy time. After editing either file run `docker compose restart pgbouncer`. Admin console:
+
+```bash
+PGPASSWORD=first-pass psql -h 127.0.0.1 -p 6432 -U app_user -d pgbouncer -c "SHOW POOLS"
+```
+
+The database password for the HTTP application is stored in:
 
 ```text
 secrets/db_password
 ```
 
 The `secrets/` directory is excluded from Git and Docker build context. The development credentials of the Postgres container itself stay in `docker-compose.yml`, so a fresh clone can start the database without any secret.
+
+**Why transaction mode.** `pool_mode = transaction` hands a server connection to a client only for the duration of one transaction, so 200 clients share 10 server connections and the pool survives many application instances. The price is everything that lives longer than a transaction: session settings such as `SET search_path` or `SET timezone` do not carry over to the next transaction, named prepared statements are bound to a connection the client no longer has, `LISTEN`/`NOTIFY` subscriptions and session-level advisory locks stay on a connection that is handed to someone else, and `WITH HOLD` cursors and temporary tables disappear with the session. This project survives it because all work runs inside `dataSource.transaction`, the `pg` driver does not name its prepared statements, `max_prepared_statements = 200` lets PgBouncer track the rest, and `server_reset_query = DISCARD ALL` cleans a connection before reuse.
 
 ### Application
 
@@ -138,6 +148,8 @@ The expected response remains:
   "uptime": 39.67
 }
 ```
+
+The script also rewrites `pgbouncer/userlist.txt` and restarts PgBouncer, so the pooler keeps accepting the application; keep the development password in the committed file. The TypeORM data layer and the backup scripts need the new password too: update `DB_PASSWORD` and `DATABASE_URL` in Infisical, or export them in the shell together with `SKIP_VAULT=1`.
 
 ### Infisical
 
@@ -307,11 +319,96 @@ npm run demo:retry
 
 **Why retry catches only 40001 and 40P01.** Serialization failure and deadlock mean the transaction lost a timing race while data and code are correct, so running it again from the start, reads included, is expected to succeed. Any other error is deterministic or ambiguous: a constraint violation fails the same way again, and after a broken connection a blind retry could apply the change twice.
 
+## Data layer ops
+
+```text
+scripts/backup.sh          pg_dump -Fc through PgBouncer into backups/<db>-<date>.dump, verified with pg_restore --list
+scripts/restore-drill.sh   restores the latest dump into a new empty postgres:17 container, compares control values, prints MATCH
+backup.cron                nightly schedule at 03:00, adjust the repository path for the target host
+RESTORE-DRILL.md           drill protocol with measured RTO and RPO
+```
+
+Both scripts take the connection from `DATABASE_URL`, which `scripts/with-secrets.sh` injects from the vault. Only the user, password and database name are used: the dump runs inside the `postgres` container and reaches PgBouncer as `pgbouncer:6432`.
+
+Backup:
+
+```bash
+bash scripts/with-secrets.sh dev bash scripts/backup.sh
+```
+
+Prints the dump path and size. The last 7 dumps are kept, the directory `backups/` is outside Git.
+
+Restore drill:
+
+```bash
+bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
+```
+
+Takes the latest dump, restores it into a fresh container, compares row counts of every table and `count | sum(total)` of `orders`, prints `MATCH` or exits with code 1, and removes the container. Run it right after a backup: a drill compares against the live database, so writes in between produce an honest `MISMATCH`.
+
+Restore into the real database, for example after `docker compose down -v`:
+
+```bash
+docker compose up -d --wait
+docker compose exec -T postgres pg_restore --no-owner --no-privileges -U app_user -d marketplace < backups/<file>.dump
+```
+
+The host `pg_restore` may be older than the server, so archive inspection and restores run inside the container.
+
+## Тестування
+
+```bash
+npm run test:integration   # repositories against postgres:16-alpine started by testcontainers
+npm run test:e2e           # full Nest application through supertest, database from a testcontainer
+npm run test:contract      # Pact consumer test, writes pacts/marketplace-frontend-marketplace-api.json
+npm run verify:provider    # Pact provider verification of the real application
+```
+
+Docker must be running: every suite starts its own Postgres container from the test code. Tests are compiled by `tsc` together with the application and run from `dist/test`; `jest.config.js` sets `reporters: ['default']` and `maxWorkers: 1`.
+
+**Isolation.** Every test file starts its own container and runs the migrations, and `TRUNCATE ... RESTART IDENTITY CASCADE` clears all tables before each test. A transaction-with-rollback strategy would not work here: checkout and the worker open their own transactions through `dataSource.transaction`, and TypeORM would commit them independently of the test transaction. Truncating five small tables costs milliseconds, and a fresh container per file keeps files independent, so the suite is green on any number of consecutive runs. Test data comes from builders in `test/integration/testkit/builders.ts` (`aUser`, `aProduct`, `anOrder`) with unique defaults.
+
+**Contract.** The consumer `marketplace-frontend` describes two interactions of `marketplace-api`: `GET /orders/{id}` under the state `order with id 1 exists` and `GET /products` under `products exist`. Both paths come from `openapi/openapi.yaml`. The generated contract in `pacts/` is committed. `verify:provider` starts the real application on a random port with a testcontainer database, seeds the provider states with `INSERT ... ON CONFLICT DO NOTHING` and verifies every interaction. Without `PACT_BROKER_URL` it reads the local pact file; with it, it fetches the contract from the broker and publishes the result (`publishVerificationResult: true`). The code reads only `process.env.PACT_BROKER_URL` and `process.env.PACT_BROKER_TOKEN`; the token is sent only when set, the local broker has no authentication.
+
+Two ways to run the verification against the broker:
+
+```bash
+bash scripts/with-secrets.sh dev npm run verify:provider          # primary: PACT_BROKER_URL comes from the vault
+PACT_BROKER_URL=http://127.0.0.1:9292 npm run verify:provider     # grader form: the value is passed directly
+```
+
+**Broker locally.** `docker compose up -d --wait` starts `pact-broker` on `http://127.0.0.1:9292` next to Postgres and PgBouncer; it keeps its data in an SQLite file inside the container. The gate sequence, run for version `5d8984d` (the git short sha, used for both pacticipants):
+
+```bash
+export PACT_BROKER_URL=http://127.0.0.1:9292
+export PACT_VERSION=$(git rev-parse --short HEAD)
+curl -X PUT "$PACT_BROKER_URL/pacts/provider/marketplace-api/consumer/marketplace-frontend/version/$PACT_VERSION" -H 'Content-Type: application/json' --data-binary @pacts/marketplace-frontend-marketplace-api.json
+npm run verify:provider
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
+curl -X PUT "$PACT_BROKER_URL/pacticipants/marketplace-api/versions/$PACT_VERSION/tags/prod" -H 'Content-Type: application/json'
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
+```
+
+can-i-deploy before the `prod` tag:
+
+```json
+{"summary":{"deployable":null,"reason":"There is no verified pact between version 5d8984d of marketplace-frontend and the latest version of marketplace-api with tag prod (no such version exists)","success":0,"failed":0,"unknown":1}}
+```
+
+can-i-deploy after the `prod` tag:
+
+```json
+{"summary":{"deployable":true,"reason":"All required verification results are published and successful","success":1,"failed":0,"unknown":0}}
+```
+
+**CI.** `.github/workflows/contract.yml` runs the job `contract` on every push and pull request: broker from compose, `test:contract`, publish, `verify:provider` with `PACT_VERSION=${{ github.sha }}`, then a can-i-deploy step that queries the broker matrix for both pacticipant versions and fails the job unless `deployable` is `true`. `PACT_BROKER_URL` and `PACT_BROKER_TOKEN` come from GitHub secrets, with the local compose address as the default.
+
 ## Grading
 
 ```bash
 docker compose up -d --wait
-export DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
+export DB_HOST=127.0.0.1 DB_PORT=6432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
+export DATABASE_URL=postgres://app_user:first-pass@127.0.0.1:6432/marketplace
 export SKIP_VAULT=1    # у грейдера немає доступу до сховища
 npm ci
 npm run build
@@ -320,4 +417,16 @@ npm run seed
 npm run demo:race
 npm run demo:workers
 npm run demo:retry
+bash scripts/with-secrets.sh dev bash scripts/backup.sh
+bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
+npm run test:integration
+npm run test:e2e
+npm run test:contract
+export PACT_BROKER_URL=http://127.0.0.1:9292
+export PACT_VERSION=$(git rev-parse --short HEAD)
+curl -X PUT "$PACT_BROKER_URL/pacts/provider/marketplace-api/consumer/marketplace-frontend/version/$PACT_VERSION" -H 'Content-Type: application/json' --data-binary @pacts/marketplace-frontend-marketplace-api.json
+bash scripts/with-secrets.sh dev npm run verify:provider
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
+curl -X PUT "$PACT_BROKER_URL/pacticipants/marketplace-api/versions/$PACT_VERSION/tags/prod" -H 'Content-Type: application/json'
+curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
 ```

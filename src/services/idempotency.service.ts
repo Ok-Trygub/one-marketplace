@@ -1,3 +1,4 @@
+import { UnprocessableEntityException } from '@nestjs/common'
 import { createHash } from 'node:crypto'
 
 type IdempotencyRecord<T> = {
@@ -58,24 +59,20 @@ type IdempotencyResult<T> = {
     replay: boolean
 }
 
-export const handleIdempotency = <T>(
+export const handleIdempotency = async <T>(
     key: string,
     requestBody: unknown,
-    createResource: () => T,
-): IdempotencyResult<T> => {
+    createResource: () => Promise<T>,
+): Promise<IdempotencyResult<T>> => {
     const existingRecord = getIdempotencyRecord<T>(key)
 
     if (existingRecord) {
         const fingerprint = createFingerprint(requestBody)
 
         if (existingRecord.fingerprint !== fingerprint) {
-            const error = new Error(
+            throw new UnprocessableEntityException(
                 'Idempotency-Key was already used with a different request body',
-            ) as Error & { status: number }
-
-            error.status = 422
-
-            throw error
+            )
         }
 
         return {
@@ -85,7 +82,7 @@ export const handleIdempotency = <T>(
         }
     }
 
-    const resource = createResource()
+    const resource = await createResource()
 
     saveIdempotencyRecord(
         key,
