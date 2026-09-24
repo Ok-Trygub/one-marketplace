@@ -1,0 +1,59 @@
+name: contract
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    env:
+      PACT_BROKER_URL: ${{ secrets.PACT_BROKER_URL || 'http://127.0.0.1:9292' }}
+      PACT_BROKER_TOKEN: ${{ secrets.PACT_BROKER_TOKEN }}
+      PACT_VERSION: ${{ github.sha }}
+      CONSUMER: marketplace-frontend
+      PROVIDER: marketplace-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Start the Pact broker
+        run: docker compose up -d --wait pact-broker
+
+      - name: Consumer contract test
+        run: npm run test:contract
+
+      - name: Publish the contract to the broker
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+            "$PACT_BROKER_URL/pacts/provider/$PROVIDER/consumer/$CONSUMER/version/$PACT_VERSION" \
+            ${PACT_BROKER_TOKEN:+-H "Authorization: Bearer $PACT_BROKER_TOKEN"} \
+            -H 'Content-Type: application/json' \
+            --data-binary "@pacts/$CONSUMER-$PROVIDER.json")
+          echo "publish: HTTP $status"
+          [ "$status" = "200" ] || [ "$status" = "201" ]
+
+      - name: Provider verification with published results
+        run: npm run verify:provider
+
+      - name: can-i-deploy
+        run: |
+          response=$(curl -s -g \
+            ${PACT_BROKER_TOKEN:+-H "Authorization: Bearer $PACT_BROKER_TOKEN"} \
+            "$PACT_BROKER_URL/matrix?q%5B%5D%5Bpacticipant%5D=$CONSUMER&q%5B%5D%5Bversion%5D=$PACT_VERSION&q%5B%5D%5Bpacticipant%5D=$PROVIDER&q%5B%5D%5Bversion%5D=$PACT_VERSION&latestby=cvpv")
+          echo "$response" | node -e '
+            let raw = ""
+            process.stdin.on("data", (chunk) => { raw += chunk })
+            process.stdin.on("end", () => {
+              const { summary } = JSON.parse(raw)
+              console.log(`can-i-deploy: deployable=${summary.deployable} reason=${summary.reason}`)
+              process.exit(summary.deployable === true ? 0 : 1)
+            })
+          '
