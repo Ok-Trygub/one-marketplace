@@ -32,19 +32,30 @@
     "report": "bash scripts/with-secrets.sh dev node dist/src/report.js",
     "demo:race": "bash scripts/with-secrets.sh dev node dist/src/demo-race.js",
     "demo:workers": "bash scripts/with-secrets.sh dev node dist/src/demo-workers.js",
-    "demo:retry": "bash scripts/with-secrets.sh dev node dist/src/demo-retry.js"
+    "demo:retry": "bash scripts/with-secrets.sh dev node dist/src/demo-retry.js",
+    "test:integration": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest integration",
+    "test:e2e": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest e2e",
+    "test:contract": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest contract/consumer",
+    "verify:provider": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest contract/provider"
   },
   "devDependencies": {
+    "@nestjs/testing": "^12.0.1",
+    "@pact-foundation/pact": "^17.1.4",
     "@redocly/cli": "^2.49.0",
+    "@testcontainers/postgresql": "^12.1.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^26.2.0",
-    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "jest": "^30.5.2",
     "nodemon": "^3.1.14",
+    "supertest": "^7.3.0",
     "typescript": "^6.0.3"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",
+    "@nestjs/platform-express": "^12.0.1",
     "express": "^4.22.2",
     "express-openapi-validator": "^5.6.2",
     "pg": "^8.23.0",
