@@ -179,7 +179,14 @@ paths:
                 $ref: '#/components/schemas/Problem'
 
         '404':
-          description: Product not found
+          description: Product or buyer not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+        '409':
+          description: Product is out of stock or the buyer has insufficient funds
           content:
             application/problem+json:
               schema:
@@ -246,6 +253,9 @@ components:
         price_cents:
           type: integer
           minimum: 0
+        stock:
+          type: integer
+          minimum: 0
     ProductList:
       type: object
       required:
@@ -269,6 +279,11 @@ components:
         name:
           type: string
         price_cents:
+          type: integer
+          minimum: 0
+        description:
+          type: string
+        stock:
           type: integer
           minimum: 0
     OrderList:
@@ -336,8 +351,12 @@ components:
     CreateOrder:
       type: object
       required:
+        - user_id
         - items
       properties:
+        user_id:
+          type: string
+          description: Identifier of the buyer.
         items:
           type: array
           minItems: 1

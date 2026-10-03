@@ -1,12 +1,7 @@
 import 'reflect-metadata'
-import path from 'node:path'
 import { DataSource } from 'typeorm'
-import type { PostgresDataSourceOptions } from 'typeorm/driver/postgres/PostgresDataSourceOptions'
-import { User } from './entities/user.entity'
-import { Product } from './entities/product.entity'
-import { Order } from './entities/order.entity'
-import { OrderItem } from './entities/order-item.entity'
-import { Job } from './entities/job.entity'
+import { buildDataSourceOptions } from './database/options'
+import type { DatabaseConnection } from './database/options'
 
 const env = (name: string): string => {
     const value = process.env[name]
@@ -18,16 +13,22 @@ const env = (name: string): string => {
     return value
 }
 
-export const dataSourceOptions: PostgresDataSourceOptions = {
-    type: 'postgres',
-    host: env('DB_HOST'),
-    port: Number(env('DB_PORT')),
-    username: env('DB_USER'),
-    password: env('DB_PASSWORD'),
-    database: env('DB_NAME'),
-    entities: [User, Product, Order, OrderItem, Job],
-    migrations: [path.join(__dirname, 'migrations', '*.js')],
-    synchronize: false,
+export const connectionFromEnv = (): DatabaseConnection => {
+    const url = process.env.DATABASE_URL
+
+    if (url) {
+        return { url }
+    }
+
+    return {
+        host: env('DB_HOST'),
+        port: Number(env('DB_PORT')),
+        username: env('DB_USER'),
+        password: env('DB_PASSWORD'),
+        database: env('DB_NAME'),
+    }
 }
+
+export const dataSourceOptions = buildDataSourceOptions(connectionFromEnv())
 
 export const AppDataSource = new DataSource(dataSourceOptions)

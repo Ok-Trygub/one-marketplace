@@ -45,3 +45,17 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  pact-broker:
+    image: pactfoundation/pact-broker@sha256:420341d4fbfb00a621c313f47e530ad75703f969bbc7520d0d72bc71bb53cef9
+    environment:
+      PACT_BROKER_DATABASE_ADAPTER: sqlite
+      PACT_BROKER_DATABASE_NAME: /tmp/pact_broker.sqlite
+      PACT_BROKER_PORT: 9292
+    ports:
+      - "9292:9292"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:9292/diagnostic/status/heartbeat > /dev/null" ]
+      interval: 3s
+      timeout: 5s
+      retries: 30

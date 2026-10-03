@@ -1,13 +1,6 @@
 import 'reflect-metadata'
 import { AppDataSource } from './data-source'
-import { OrderItem } from './entities/order-item.entity'
-
-type RevenueRow = {
-    productId: string
-    productName: string
-    unitsSold: string
-    revenue: string
-}
+import { ProductsRepository } from './repositories/products.repository'
 
 const formatUah = (kopiykas: string): string => {
     const value = BigInt(kopiykas)
@@ -21,19 +14,7 @@ const main = async () => {
     await AppDataSource.initialize()
 
     try {
-        const rows = await AppDataSource.getRepository(OrderItem)
-            .createQueryBuilder('item')
-            .innerJoin('item.order', 'o')
-            .innerJoin('item.product', 'product')
-            .select('product.id', 'productId')
-            .addSelect('product.name', 'productName')
-            .addSelect('SUM(item.quantity)', 'unitsSold')
-            .addSelect('SUM(item.quantity * item.unitPrice)', 'revenue')
-            .where('o.status = :status', { status: 'paid' })
-            .groupBy('product.id')
-            .addGroupBy('product.name')
-            .orderBy('revenue', 'DESC')
-            .getRawMany<RevenueRow>()
+        const rows = await new ProductsRepository(AppDataSource).revenueByProduct()
 
         console.table(
             rows.map((row) => ({

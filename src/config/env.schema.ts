@@ -3,9 +3,11 @@ import { z } from 'zod'
 export const envSchema = z.object({
     PORT: z.coerce.number().int().min(1).max(65535),
 
-    DB_URL: z.url({
-        protocol: /^postgres$/,
-    }),
+    DB_URL: z
+        .url({
+            protocol: /^postgres$/,
+        })
+        .optional(),
 
     DB_PASSWORD_FILE: z.string().min(1).default('secrets/db_password'),
 
