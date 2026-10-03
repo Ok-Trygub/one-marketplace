@@ -9,11 +9,12 @@ services:
       - "5001:5001"
     environment:
       PORT: 5001
-      DB_URL: postgres://app_user@postgres:5432/marketplace
+      DB_URL: postgres://app_user@pgbouncer:6432/marketplace
     volumes:
       - ./secrets:/app/secrets:ro
     depends_on:
-      - postgres
+      pgbouncer:
+        condition: service_healthy
 
   postgres:
     image: postgres:17
@@ -28,3 +29,19 @@ services:
       retries: 15
     ports:
       - "5432:5432"
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    volumes:
+      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "PGPASSWORD=first-pass psql -h 127.0.0.1 -p 6432 -U app_user -d pgbouncer -Atc 'SHOW VERSION' > /dev/null" ]
+      interval: 2s
+      timeout: 3s
+      retries: 15

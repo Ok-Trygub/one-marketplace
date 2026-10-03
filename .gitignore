@@ -10,6 +10,7 @@ yarn-error.log*
 !.env.example
 secrets/
 .secrets/
+backups/
 
 .DS_Store
 
