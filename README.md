@@ -23,7 +23,7 @@ LOG_LEVEL=info
 TIMEOUT_MS=5000
 ```
 
-`PORT` and `DB_URL` are required. `DB_URL` provides the host, port, database and user; the password comes from the secret file. Use `localhost` when running on the host and `postgres` when running through Compose.
+`PORT` is required. `DB_URL` provides the host, port, database and user; the password comes from the secret file. When `DATABASE_URL` is set, for example by a testcontainer in the test suites, it takes precedence over `DB_URL` and the password file. Use `localhost` when running on the host and `postgres` when running through Compose.
 
 `DB_PASSWORD_FILE` is the path to the file with the database password, resolved from the working directory.
 
