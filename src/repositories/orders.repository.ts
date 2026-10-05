@@ -32,6 +32,15 @@ export class OrdersRepository {
         })
     }
 
+    async findOwnerId(id: string): Promise<string | null> {
+        const order = await this.dataSource.getRepository(Order).findOne({
+            where: { id },
+            select: { id: true, userId: true },
+        })
+
+        return order?.userId ?? null
+    }
+
     listByUser(userId: string): Promise<Order[]> {
         return this.dataSource.getRepository(Order).find({
             where: { userId },
