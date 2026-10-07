@@ -25,9 +25,16 @@ export const startTestDatabase = async (): Promise<TestDatabase> => {
         container,
         dataSource,
         truncate: async () => {
-            await dataSource.query(
-                'TRUNCATE TABLE order_items, orders, jobs, products, users RESTART IDENTITY CASCADE',
+            const tables = await dataSource.query<{ table_name: string }[]>(
+                `SELECT table_name
+                 FROM information_schema.tables
+                 WHERE table_schema = 'public'
+                   AND table_type = 'BASE TABLE'
+                   AND table_name NOT IN ('migrations', 'typeorm_metadata')`,
             )
+            const names = tables.map(({ table_name }) => `"${table_name}"`).join(', ')
+
+            await dataSource.query(`TRUNCATE TABLE ${names} RESTART IDENTITY CASCADE`)
         },
         stop: async () => {
             await dataSource.destroy()

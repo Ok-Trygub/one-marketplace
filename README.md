@@ -23,7 +23,7 @@ LOG_LEVEL=info
 TIMEOUT_MS=5000
 ```
 
-`PORT` and `DB_URL` are required. `DB_URL` provides the host, port, database and user; the password comes from the secret file. Use `localhost` when running on the host and `postgres` when running through Compose.
+`PORT` is required. `DB_URL` provides the host, port, database and user; the password comes from the secret file. When `DATABASE_URL` is set, for example by a testcontainer in the test suites, it takes precedence over `DB_URL` and the password file. Use `localhost` when running on the host and `postgres` when running through Compose.
 
 `DB_PASSWORD_FILE` is the path to the file with the database password, resolved from the working directory.
 
@@ -403,6 +403,58 @@ can-i-deploy after the `prod` tag:
 
 **CI.** `.github/workflows/contract.yml` runs the job `contract` on every push and pull request: broker from compose, `test:contract`, publish, `verify:provider` with `PACT_VERSION=${{ github.sha }}`, then a can-i-deploy step that queries the broker matrix for both pacticipant versions and fails the job unless `deployable` is `true`. `PACT_BROKER_URL` and `PACT_BROKER_TOKEN` come from GitHub secrets, with the local compose address as the default.
 
+## Realtime
+
+A status change of an order reaches connected clients at once, over two transports fed by one bus.
+
+```
+PATCH /orders/:id/status → OrderStatusService → OrderEventsService
+                                                   ├─ OrdersGateway   → room orders:<id>
+                                                   └─ GET /orders/:id/events
+```
+
+- `src/services/order-status.service.ts` changes the status with one atomic `UPDATE` and publishes the event. Allowed transitions: `pending ⇄ paid`, `pending → cancelled`, `paid → cancelled`; anything else is `409`.
+- `src/services/order-events.service.ts` is the bus: an RxJS `Subject` plus an in-memory buffer of the last 100 events per order, kept for at most 1000 orders with the least recently changed order evicted first. Event numbers grow per order, starting from 1.
+- `src/gateways/orders.gateway.ts` is the socket.io gateway. The client sends `join` with `{ orderId }` and gets an ack. The socket enters the room `orders:<id>` only when `auth.userId` from the handshake is the owner of the order; otherwise the ack is `UNAUTHORIZED`, `FORBIDDEN` or `ORDER_NOT_FOUND`. The event `order.status` goes only to that room.
+- `GET /orders/:id/events` is the SSE stream of the same events with `id:`, `event:` and `data:`. The header `X-User-Id` names the buyer: without it the answer is `401`, for a buyer who does not own the order it is `403`. A new connection receives only new events; with `Last-Event-ID: N` it first receives the buffered events with a number greater than `N`.
+
+The project has no authentication yet: the gateway trusts `auth.userId` from the handshake and the SSE endpoint trusts `X-User-Id`. In production both would verify a signed token, carried in a cookie for the browser `EventSource`, which cannot set headers.
+
+Start the application on port 3000, after the database is up, migrated and seeded as in [Grading](#grading):
+
+```bash
+npm run build
+PORT=3000 node dist/src/server.js
+```
+
+Demo of room isolation. It takes two seeded orders, connects two socket.io clients, changes the status of order A over HTTP and prints what each client received:
+
+```bash
+node scripts/realtime-demo.mjs; echo "exit=$?"               # different rooms: A_RECEIVED=1, B_RECEIVED=0, exit=0
+node scripts/realtime-demo.mjs --same-room; echo "exit=$?"   # both clients in the room of order A: A_RECEIVED=1, B_RECEIVED=1, exit=0
+```
+
+SSE by hand, with the id of any order that is not cancelled and the id of its buyer:
+
+```bash
+curl -sN -H 'X-User-Id: 1' http://localhost:3000/orders/1/events &
+curl -s -X PATCH http://localhost:3000/orders/1/status -H 'Content-Type: application/json' -d '{"status":"pending"}'
+curl -sN --max-time 2 -H 'X-User-Id: 1' -H 'Last-Event-ID: 3' http://localhost:3000/orders/1/events
+```
+
+**Two instances.** With two instances behind a load balancer a status change handled by the first instance reaches only the clients connected to the first one, because the rooms and the event buffer live in the memory of one process, and a restart empties the buffer; the cure is the socket.io Redis adapter for the rooms and a shared bus such as Redis Pub/Sub for the SSE stream and its buffer.
+
+## Trade-offs: WebSocket vs SSE
+
+| Criterion | WebSocket, socket.io | SSE |
+|---|---|---|
+| Channel direction | Two-way: the client sends `join` and gets an ack over the same connection | One-way, server to client; the client speaks through ordinary HTTP requests |
+| Reconnect and recovery | socket.io reconnects by itself, but the room is lost: the client must send `join` again, and events missed while offline are not replayed | The browser `EventSource` reconnects by itself after `retry: 1000` and sends `Last-Event-ID`; the server replays the missed events from the buffer |
+| Infrastructure | Proxies and load balancers must pass the Upgrade handshake; the polling fallback needs sticky sessions; several instances need the Redis adapter | Plain HTTP, works through any proxy that does not buffer the response; HTTP/1.1 limits a browser to about six streams per domain; several instances need a shared bus |
+| Cost per event | A frame of a few bytes on an open connection, plus heartbeat packets of socket.io | A text block of `id`, `event` and `data`, some tens of bytes more than a frame; one open HTTP response per watched order |
+
+For order status notifications in production I would keep SSE. The flow is one-way, the reconnect with `Last-Event-ID` gives recovery of missed events for free, and it needs nothing from the infrastructure beyond plain HTTP. WebSocket earns its price only when the client has to send data often, for example in a chat.
+
 ## Grading
 
 ```bash
@@ -429,4 +481,20 @@ bash scripts/with-secrets.sh dev npm run verify:provider
 curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
 curl -X PUT "$PACT_BROKER_URL/pacticipants/marketplace-api/versions/$PACT_VERSION/tags/prod" -H 'Content-Type: application/json'
 curl "$PACT_BROKER_URL/can-i-deploy?pacticipant=marketplace-frontend&version=$PACT_VERSION&to=prod"
+PORT=3000 node dist/src/server.js &
+SERVER_PID=$!
+until curl -sf http://localhost:3000/health > /dev/null; do sleep 1; done
+node scripts/realtime-demo.mjs; echo "exit=$?"
+node scripts/realtime-demo.mjs --same-room; echo "exit=$?"
+ORDER=$(curl -s 'http://localhost:3000/orders?limit=100' | node -pe "const o = JSON.parse(require('fs').readFileSync(0)).items.find((order) => order.status !== 'cancelled'); o.id + ' ' + o.user_id")
+ORDER_ID=${ORDER% *}
+OWNER_ID=${ORDER#* }
+curl -sN --max-time 2 -D - -o /dev/null -H "X-User-Id: $OWNER_ID" http://localhost:3000/orders/$ORDER_ID/events | grep -i '^content-type'
+curl -sN --max-time 5 -H "X-User-Id: $OWNER_ID" http://localhost:3000/orders/$ORDER_ID/events &
+STREAM_PID=$!
+sleep 1
+for STATUS in pending paid pending paid pending; do curl -s -o /dev/null -X PATCH http://localhost:3000/orders/$ORDER_ID/status -H 'Content-Type: application/json' -d "{\"status\":\"$STATUS\"}"; done
+wait $STREAM_PID
+curl -sN --max-time 2 -H "X-User-Id: $OWNER_ID" -H 'Last-Event-ID: 3' http://localhost:3000/orders/$ORDER_ID/events | grep '^id:' | head -1
+kill $SERVER_PID
 ```
