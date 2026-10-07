@@ -414,11 +414,11 @@ PATCH /orders/:id/status → OrderStatusService → OrderEventsService
 ```
 
 - `src/services/order-status.service.ts` changes the status with one atomic `UPDATE` and publishes the event. Allowed transitions: `pending ⇄ paid`, `pending → cancelled`, `paid → cancelled`; anything else is `409`.
-- `src/services/order-events.service.ts` is the bus: an RxJS `Subject` plus an in-memory buffer of the last 100 events per order. Event numbers grow per order, starting from 1.
+- `src/services/order-events.service.ts` is the bus: an RxJS `Subject` plus an in-memory buffer of the last 100 events per order, kept for at most 1000 orders with the least recently changed order evicted first. Event numbers grow per order, starting from 1.
 - `src/gateways/orders.gateway.ts` is the socket.io gateway. The client sends `join` with `{ orderId }` and gets an ack. The socket enters the room `orders:<id>` only when `auth.userId` from the handshake is the owner of the order; otherwise the ack is `UNAUTHORIZED`, `FORBIDDEN` or `ORDER_NOT_FOUND`. The event `order.status` goes only to that room.
-- `GET /orders/:id/events` is the SSE stream of the same events with `id:`, `event:` and `data:`. A new connection first receives the buffered events of the order; with `Last-Event-ID: N` it receives only the events with a number greater than `N`.
+- `GET /orders/:id/events` is the SSE stream of the same events with `id:`, `event:` and `data:`. The header `X-User-Id` names the buyer: without it the answer is `401`, for a buyer who does not own the order it is `403`. A new connection receives only new events; with `Last-Event-ID: N` it first receives the buffered events with a number greater than `N`.
 
-The project has no authentication yet: the gateway trusts `auth.userId`, and the SSE endpoint is open. In production both would verify a signed token.
+The project has no authentication yet: the gateway trusts `auth.userId` from the handshake and the SSE endpoint trusts `X-User-Id`. In production both would verify a signed token, carried in a cookie for the browser `EventSource`, which cannot set headers.
 
 Start the application on port 3000, after the database is up, migrated and seeded as in [Grading](#grading):
 
@@ -434,12 +434,12 @@ node scripts/realtime-demo.mjs; echo "exit=$?"               # different rooms: 
 node scripts/realtime-demo.mjs --same-room; echo "exit=$?"   # both clients in the room of order A: A_RECEIVED=1, B_RECEIVED=1, exit=0
 ```
 
-SSE by hand, with the id of any order that is not cancelled:
+SSE by hand, with the id of any order that is not cancelled and the id of its buyer:
 
 ```bash
+curl -sN -H 'X-User-Id: 1' http://localhost:3000/orders/1/events &
 curl -s -X PATCH http://localhost:3000/orders/1/status -H 'Content-Type: application/json' -d '{"status":"pending"}'
-curl -sN --max-time 5 http://localhost:3000/orders/1/events
-curl -sN --max-time 2 -H 'Last-Event-ID: 3' http://localhost:3000/orders/1/events
+curl -sN --max-time 2 -H 'X-User-Id: 1' -H 'Last-Event-ID: 3' http://localhost:3000/orders/1/events
 ```
 
 **Two instances.** With two instances behind a load balancer a status change handled by the first instance reaches only the clients connected to the first one, because the rooms and the event buffer live in the memory of one process, and a restart empties the buffer; the cure is the socket.io Redis adapter for the rooms and a shared bus such as Redis Pub/Sub for the SSE stream and its buffer.
@@ -486,10 +486,15 @@ SERVER_PID=$!
 until curl -sf http://localhost:3000/health > /dev/null; do sleep 1; done
 node scripts/realtime-demo.mjs; echo "exit=$?"
 node scripts/realtime-demo.mjs --same-room; echo "exit=$?"
-ORDER_ID=$(curl -s 'http://localhost:3000/orders?limit=100' | node -pe "JSON.parse(require('fs').readFileSync(0)).items.find((order) => order.status !== 'cancelled').id")
-curl -sN --max-time 2 -D - -o /dev/null http://localhost:3000/orders/$ORDER_ID/events | grep -i '^content-type'
+ORDER=$(curl -s 'http://localhost:3000/orders?limit=100' | node -pe "const o = JSON.parse(require('fs').readFileSync(0)).items.find((order) => order.status !== 'cancelled'); o.id + ' ' + o.user_id")
+ORDER_ID=${ORDER% *}
+OWNER_ID=${ORDER#* }
+curl -sN --max-time 2 -D - -o /dev/null -H "X-User-Id: $OWNER_ID" http://localhost:3000/orders/$ORDER_ID/events | grep -i '^content-type'
+curl -sN --max-time 5 -H "X-User-Id: $OWNER_ID" http://localhost:3000/orders/$ORDER_ID/events &
+STREAM_PID=$!
+sleep 1
 for STATUS in pending paid pending paid pending; do curl -s -o /dev/null -X PATCH http://localhost:3000/orders/$ORDER_ID/status -H 'Content-Type: application/json' -d "{\"status\":\"$STATUS\"}"; done
-curl -sN --max-time 5 http://localhost:3000/orders/$ORDER_ID/events
-curl -sN --max-time 2 -H 'Last-Event-ID: 3' http://localhost:3000/orders/$ORDER_ID/events | grep '^id:' | head -1
+wait $STREAM_PID
+curl -sN --max-time 2 -H "X-User-Id: $OWNER_ID" -H 'Last-Event-ID: 3' http://localhost:3000/orders/$ORDER_ID/events | grep '^id:' | head -1
 kill $SERVER_PID
 ```

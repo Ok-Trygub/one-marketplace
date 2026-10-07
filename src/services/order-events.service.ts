@@ -10,6 +10,7 @@ export type OrderStatusEvent = {
 }
 
 const BUFFER_SIZE = 100
+const MAX_ORDERS = 1000
 
 @Injectable()
 export class OrderEventsService implements OnModuleDestroy {
@@ -35,7 +36,17 @@ export class OrderEventsService implements OnModuleDestroy {
             buffer.shift()
         }
 
+        this.buffers.delete(orderId)
         this.buffers.set(orderId, buffer)
+
+        if (this.buffers.size > MAX_ORDERS) {
+            const oldest = this.buffers.keys().next().value
+
+            if (oldest !== undefined) {
+                this.buffers.delete(oldest)
+            }
+        }
+
         this.subject.next(event)
 
         return event

@@ -62,12 +62,15 @@ describe('order status realtime (e2e)', () => {
     }
 
     const readStream = async (
-        path: string,
+        order: OrderResponse,
         expectedEvents: number,
         headers: Record<string, string> = {},
     ): Promise<{ contentType: string | null; text: string }> => {
         const controller = new AbortController()
-        const response = await fetch(`${baseUrl}${path}`, { headers, signal: controller.signal })
+        const response = await fetch(`${baseUrl}/orders/${order.id}/events`, {
+            headers: { 'X-User-Id': order.user_id, ...headers },
+            signal: controller.signal,
+        })
         const reader = response.body!.getReader()
         const decoder = new TextDecoder()
         let text = ''
@@ -182,10 +185,12 @@ describe('order status realtime (e2e)', () => {
 
     it('should stream status changes as server-sent events', async () => {
         const order = await createOrder()
+        const pending = readStream(order, 1)
 
+        await new Promise((resolve) => setTimeout(resolve, 300))
         await changeStatus(order.id, 'pending').expect(200)
 
-        const stream = await readStream(`/orders/${order.id}/events`, 1)
+        const stream = await pending
 
         expect(stream.contentType).toBe('text/event-stream')
         expect(stream.text).toContain('retry: 1000\n\n')
@@ -200,13 +205,47 @@ describe('order status realtime (e2e)', () => {
             await changeStatus(order.id, status).expect(200)
         }
 
-        const stream = await readStream(`/orders/${order.id}/events`, 1, { 'Last-Event-ID': '3' })
+        const stream = await readStream(order, 1, { 'Last-Event-ID': '3' })
 
         expect(eventIds(stream.text)).toEqual([4])
     })
 
+    it('should not replay history without Last-Event-ID', async () => {
+        const order = await createOrder()
+
+        await changeStatus(order.id, 'pending').expect(200)
+        await changeStatus(order.id, 'paid').expect(200)
+
+        const pending = readStream(order, 1)
+
+        await new Promise((resolve) => setTimeout(resolve, 300))
+        await changeStatus(order.id, 'pending').expect(200)
+
+        const stream = await pending
+
+        expect(eventIds(stream.text)).toEqual([3])
+    })
+
+    it('should refuse the event stream to an anonymous client and to a stranger', async () => {
+        const order = await createOrder()
+        const stranger = await insertUser(database.dataSource)
+
+        const anonymous = await request(baseUrl).get(`/orders/${order.id}/events`).expect(401)
+
+        expect(anonymous.headers['content-type']).toContain('application/problem+json')
+
+        await request(baseUrl)
+            .get(`/orders/${order.id}/events`)
+            .set('X-User-Id', stranger.id)
+            .expect(403)
+    })
+
     it('should return 404 for the event stream of an unknown order', async () => {
-        const response = await request(baseUrl).get('/orders/999999/events').expect(404)
+        const stranger = await insertUser(database.dataSource)
+        const response = await request(baseUrl)
+            .get('/orders/999999/events')
+            .set('X-User-Id', stranger.id)
+            .expect(404)
 
         expect(response.headers['content-type']).toContain('application/problem+json')
     })

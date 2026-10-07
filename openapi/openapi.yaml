@@ -300,10 +300,16 @@ paths:
           description: Unique identifier of the order.
           schema:
             type: string
+        - name: X-User-Id
+          in: header
+          required: false
+          description: Identifier of the buyer. Without it the stream answers 401, for a buyer who does not own the order it answers 403.
+          schema:
+            type: string
         - name: Last-Event-ID
           in: header
           required: false
-          description: Number of the last event the client has seen. Buffered events with a greater number are sent first.
+          description: Number of the last event the client has seen. Buffered events with a greater number are sent first; without the header only new events are sent.
           schema:
             type: string
 
@@ -314,6 +320,18 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        '401':
+          description: X-User-Id header is missing
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The order belongs to another buyer
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Order not found
           content:

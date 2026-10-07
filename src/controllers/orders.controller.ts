@@ -2,6 +2,7 @@ import {
     Body,
     ConflictException,
     Controller,
+    ForbiddenException,
     Get,
     Headers,
     HttpCode,
@@ -11,6 +12,7 @@ import {
     Post,
     Query,
     Res,
+    UnauthorizedException,
 } from '@nestjs/common'
 import type { Response } from 'express'
 import { OrdersRepository } from '../repositories/orders.repository'
@@ -73,8 +75,8 @@ const translateCheckoutError = (error: unknown): never => {
     throw error
 }
 
-const toLastEventId = (value: string | undefined): number => {
-    return value !== undefined && /^\d+$/.test(value) ? Number(value) : 0
+const toLastEventId = (value: string | undefined): number | null => {
+    return value !== undefined && /^\d+$/.test(value) ? Number(value) : null
 }
 
 const toSseBlock = (event: OrderStatusEvent): string => {
@@ -172,13 +174,22 @@ export class OrdersController {
     @Get(':id/events')
     async streamEvents(
         @Param('id') id: string,
+        @Headers('x-user-id') userId: string | undefined,
         @Headers('last-event-id') lastEventId: string | undefined,
         @Res() response: Response,
     ): Promise<void> {
+        if (!userId || !isId(userId)) {
+            throw new UnauthorizedException('X-User-Id header with the buyer id is required')
+        }
+
         const ownerId = isId(id) ? await this.orders.findOwnerId(id) : null
 
         if (!ownerId) {
             throw new NotFoundException(`Order '${id}' was not found`)
+        }
+
+        if (ownerId !== userId) {
+            throw new ForbiddenException(`Order '${id}' belongs to another buyer`)
         }
 
         response.writeHead(200, {
@@ -188,8 +199,12 @@ export class OrdersController {
         })
         response.write('retry: 1000\n\n')
 
-        for (const missed of this.events.missedSince(id, toLastEventId(lastEventId))) {
-            response.write(toSseBlock(missed))
+        const lastSeen = toLastEventId(lastEventId)
+
+        if (lastSeen !== null) {
+            for (const missed of this.events.missedSince(id, lastSeen)) {
+                response.write(toSseBlock(missed))
+            }
         }
 
         const subscription = this.events.streamFor(id).subscribe({
