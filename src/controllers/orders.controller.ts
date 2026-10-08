@@ -21,6 +21,7 @@ import { handleIdempotency } from '../services/idempotency.service'
 import { OrderEventsService } from '../services/order-events.service'
 import type { OrderStatusEvent } from '../services/order-events.service'
 import { OrderStatusError, OrderStatusService } from '../services/order-status.service'
+import { PlaceOrderService } from '../services/place-order.service'
 import type { OrderStatus } from '../services/order-status.service'
 import type { Order } from '../entities/order.entity'
 
@@ -101,6 +102,7 @@ export class OrdersController {
         private readonly orders: OrdersRepository,
         private readonly orderStatus: OrderStatusService,
         private readonly events: OrderEventsService,
+        private readonly placeOrder: PlaceOrderService,
     ) {}
 
     @Get()
@@ -128,8 +130,8 @@ export class OrdersController {
         }
 
         const result = await handleIdempotency(idempotencyKey, body, () =>
-            this.orders
-                .create({
+            this.placeOrder
+                .place({
                     userId: body.user_id,
                     items: body.items.map((item) => ({
                         productId: item.product_id,

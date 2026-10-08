@@ -6,6 +6,7 @@
 | `DB_URL` | Infisical, `.env` for a local run | PgBouncer host, port, database and user, without a password |
 | `DATABASE_URL` | Infisical | full connection string through PgBouncer for `scripts/backup.sh` and `scripts/restore-drill.sh` |
 | `DB_PASSWORD_FILE` | `.env`, default `secrets/db_password` | path to the file with the database password |
+| `BROKER_URL` | Infisical, `.env` for a local run | AMQP address of RabbitMQ with the dev credentials from `docker-compose.yml` |
 | `LOG_LEVEL` | `.env`, default `info` | minimum log level |
 | `TIMEOUT_MS` | `.env`, default `5000` | database connection timeout |
 
@@ -19,6 +20,7 @@ Application configuration is validated on startup using Zod through NestJS `Conf
 PORT=5001
 DB_URL=postgres://app_user@localhost:5432/marketplace
 DB_PASSWORD_FILE=secrets/db_password
+BROKER_URL=amqp://app_user:first-pass@localhost:5672
 LOG_LEVEL=info
 TIMEOUT_MS=5000
 ```
@@ -455,12 +457,54 @@ curl -sN --max-time 2 -H 'X-User-Id: 1' -H 'Last-Event-ID: 3' http://localhost:3
 
 For order status notifications in production I would keep SSE. The flow is one-way, the reconnect with `Last-Event-ID` gives recovery of missed events for free, and it needs nothing from the infrastructure beyond plain HTTP. WebSocket earns its price only when the client has to send data often, for example in a chat.
 
+## Async-події через RabbitMQ
+
+```
+POST /orders → PlaceOrderService → checkout, COMMIT → OrderPlacedPublisher → [shop.events] topic
+                                                                                   │ binding order.placed
+                                                                                   ▼
+                                                                         (shop.order-placed) quorum, x-delivery-limit 3
+                                                                                   │ consumer: prefetch 10, manual ack
+                                                                                   ├─ INSERT receipts ON CONFLICT DO NOTHING → ack
+                                                                                   └─ poison or delivery limit → [shop.dlx] → (shop.dlq)
+```
+
+- `src/messaging/topology.ts` declares the exchange `shop.events`, the quorum queue `shop.order-placed` bound to `order.placed`, and the dead-letter contour `shop.dlx` with the queue `shop.dlq`. The consumer and the demos declare it; the publisher asserts only the exchange and knows nothing about queues.
+- `src/messaging/order-placed.event.ts` is the event contract: `eventId`, `type`, `occurredAt` and `data` with the order id, buyer, total and items. `eventId` is `order.placed:<order id>`, stable across republishes.
+- `src/services/place-order.service.ts` runs the checkout transaction and publishes the event after `COMMIT`. `src/messaging/order-placed.publisher.ts` publishes on a confirm channel with `mandatory: true` and waits for the confirm; a message the broker returns as unroutable becomes an error.
+- `src/messaging/order-placed.consumer.ts` consumes with `noAck: false` and `prefetch 10`; the effect is one `INSERT` into `receipts` with a unique `event_id` and `ON CONFLICT DO NOTHING`, the ack comes after it. A message that is not valid JSON or does not match the contract is rejected without requeue; a database failure requeues it, and the quorum queue dead-letters it after 3 deliveries.
+- `src/consumer.ts` runs the consumer as a separate process: `npm run consume`. Start it before the API on a fresh broker, because it declares the topology.
+- RabbitMQ `4.2.9-management` in `docker-compose.yml`, the LTS series; `BROKER_URL` lives in Infisical next to the database connection.
+
+```bash
+npm run demo:publish
+npm run demo:dlq
+npm run demo:duplicate
+```
+
+| Demo | My run |
+|---|---|
+| `demo:publish` | 5 orders placed through `PlaceOrderService`: `published=5 delivered=5 effect=5 acked=5 work=0 dlq=0 prefetch=10` |
+| `demo:dlq` | one message that is not an `order.placed` event: `rejected=1 work=0 dlq=1 dlq-reason=rejected effect=0`, the reason is read from the `x-first-death-reason` header |
+| `demo:duplicate` | consumer killed with `SIGKILL` after the effect and before the ack, a second consumer receives the redelivery: `deliveries=2 effect=1 skipped=1` |
+
+Every demo resets its own state first: the demo buyer and product are upserted, their orders and receipts from earlier runs are deleted, both queues are purged. Each demo checks its invariant and exits with code 1 when it is violated.
+
+**prefetch = 10.** The effect is one `INSERT` of a few milliseconds, so `10 × 5 ms = 50 ms` is far below the stock `consumer_timeout` of 30 minutes, while 10 is small enough that a second consumer still gets its share of the queue; `prefetch = 1` would cost a broker round trip per message for a 5 ms job.
+
+**At-least-once, not exactly-once.** RabbitMQ delivers at least once: a consumer that dies between the effect and the ack gets the same message again, `demo:duplicate` shows this with `deliveries=2`. The delivery itself is never exactly-once, nothing can make it so. What makes the result happen once is the idempotent effect: the receipt is inserted by a natural key, the `eventId`, with `ON CONFLICT DO NOTHING`, so the second delivery inserts nothing and is acked as a duplicate. The dedup store is the `receipts` table, not process memory, so it survives a restart and is shared by every consumer instance. The duplicate is produced by `kill -9` of a child consumer process whose ack is delayed by `CONSUMER_ACK_DELAY_MS`, which is how a crash looks to the broker: the connection drops and the unacked message is requeued.
+
+**Two gaps that stay open until the outbox.** The publisher runs after `COMMIT`, so a crash between the commit and the publish leaves an order without an event; a publish failure is logged with the `eventId`, not retried. On the consumer side the mark and the effect are the same row, so there is no gap between them, but a crash between the effect and the ack is exactly the duplicate above. The transactional outbox and `processed_messages` in one commit close the producer side later.
+
+**DLQ.** `x-dead-letter-exchange` is set as a queue argument of `shop.order-placed`; a poison message is rejected with `requeue=false` and arrives in `shop.dlq` with `x-first-death-reason: rejected`, a message that keeps failing arrives with `delivery_limit` after the third delivery. The dead-letter strategy is the default `at-most-once`: `at-least-once` needs `overflow: reject-publish` on the source queue and silently falls back otherwise.
+
 ## Grading
 
 ```bash
 docker compose up -d --wait
 export DB_HOST=127.0.0.1 DB_PORT=6432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
 export DATABASE_URL=postgres://app_user:first-pass@127.0.0.1:6432/marketplace
+export BROKER_URL=amqp://app_user:first-pass@127.0.0.1:5672
 export SKIP_VAULT=1    # у грейдера немає доступу до сховища
 npm ci
 npm run build
@@ -469,6 +513,9 @@ npm run seed
 npm run demo:race
 npm run demo:workers
 npm run demo:retry
+npm run demo:publish; echo "exit=$?"
+npm run demo:dlq; echo "exit=$?"
+npm run demo:duplicate; echo "exit=$?"
 bash scripts/with-secrets.sh dev bash scripts/backup.sh
 bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
 npm run test:integration

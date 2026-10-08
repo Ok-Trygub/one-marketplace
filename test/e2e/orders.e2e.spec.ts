@@ -1,19 +1,26 @@
 import { Test } from '@nestjs/testing'
 import type { INestApplication } from '@nestjs/common'
 import request from 'supertest'
+import { connectBroker } from '../../src/messaging/broker'
+import { ORDER_PLACED_QUEUE, assertTopology } from '../../src/messaging/topology'
 import { AppModule } from '../../src/app.module'
 import { configureApp } from '../../src/http/configure-app'
 import { startTestDatabase } from '../integration/testkit/database'
+import { startTestBroker } from '../integration/testkit/broker'
+import type { TestBroker } from '../integration/testkit/broker'
 import type { TestDatabase } from '../integration/testkit/database'
 import { insertProduct, insertUser } from '../integration/testkit/builders'
 
 describe('orders (e2e)', () => {
     let database: TestDatabase
+    let broker: TestBroker
     let app: INestApplication
 
     beforeAll(async () => {
         database = await startTestDatabase()
+        broker = await startTestBroker()
         process.env.DATABASE_URL = database.container.getConnectionUri()
+        process.env.BROKER_URL = broker.url
 
         const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
 
@@ -29,6 +36,7 @@ describe('orders (e2e)', () => {
     afterAll(async () => {
         await app?.close()
         await database?.stop()
+        await broker?.stop()
     })
 
     it('should create an order and read it back', async () => {
@@ -77,6 +85,35 @@ describe('orders (e2e)', () => {
 
         expect(replay.headers['idempotency-replay']).toBe('true')
         expect(replay.body.id).toBe(created.body.id)
+    })
+
+    it('should publish order.placed when an order is created', async () => {
+        const connection = await connectBroker(broker.url)
+        const channel = await connection.createChannel()
+
+        await assertTopology(channel)
+        await channel.purgeQueue(ORDER_PLACED_QUEUE)
+
+        const buyer = await insertUser(database.dataSource)
+        const product = await insertProduct(database.dataSource)
+
+        const created = await request(app.getHttpServer())
+            .post('/orders')
+            .set('Idempotency-Key', 'e2e-publish-order')
+            .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 1 }] })
+            .expect(201)
+
+        const message = await channel.get(ORDER_PLACED_QUEUE, { noAck: true })
+
+        expect(message).not.toBe(false)
+        expect((message || undefined)?.properties.messageId).toBe(`order.placed:${created.body.id}`)
+        expect(JSON.parse(String((message || undefined)?.content))).toMatchObject({
+            eventId: `order.placed:${created.body.id}`,
+            type: 'order.placed',
+            data: { orderId: created.body.id, userId: buyer.id, total: created.body.total_cents },
+        })
+
+        await connection.close()
     })
 
     it('should return 404 in problem+json for an unknown order', async () => {
