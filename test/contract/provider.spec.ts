@@ -7,6 +7,8 @@ import type { VerifierOptions } from '@pact-foundation/pact'
 import { AppModule } from '../../src/app.module'
 import { configureApp } from '../../src/http/configure-app'
 import { startTestDatabase } from '../integration/testkit/database'
+import { startTestBroker } from '../integration/testkit/broker'
+import type { TestBroker } from '../integration/testkit/broker'
 import type { TestDatabase } from '../integration/testkit/database'
 import { PACT_FILE, PROVIDER } from './pact'
 
@@ -41,12 +43,15 @@ const pactSource = (): Partial<VerifierOptions> => {
 
 describe(`${PROVIDER} provider verification`, () => {
     let database: TestDatabase
+    let broker: TestBroker
     let app: INestApplication
     let providerBaseUrl: string
 
     beforeAll(async () => {
         database = await startTestDatabase()
+        broker = await startTestBroker()
         process.env.DATABASE_URL = database.container.getConnectionUri()
+        process.env.BROKER_URL = broker.url
 
         const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
 
@@ -62,21 +67,22 @@ describe(`${PROVIDER} provider verification`, () => {
     afterAll(async () => {
         await app?.close()
         await database?.stop()
+        await broker?.stop()
     })
 
     it('should satisfy every interaction of the consumer contract', async () => {
         const seedBuyerAndProduct = async () => {
             await database.dataSource.query(
                 `INSERT INTO users (id, email, phone, name, balance)
-                 OVERRIDING SYSTEM VALUE
+                     OVERRIDING SYSTEM VALUE
                  VALUES (1, 'pact-buyer@example.com', '+380500000001', 'Pact Buyer', 1000000000)
-                 ON CONFLICT (id) DO NOTHING`,
+                     ON CONFLICT (id) DO NOTHING`,
             )
             await database.dataSource.query(
                 `INSERT INTO products (id, name, description, price, stock)
-                 OVERRIDING SYSTEM VALUE
+                     OVERRIDING SYSTEM VALUE
                  VALUES (1, 'Електрочайник Tefal TF-1008', 'Електрочайник зі скла на 1,7 літра', 149900, 10)
-                 ON CONFLICT (id) DO NOTHING`,
+                     ON CONFLICT (id) DO NOTHING`,
             )
         }
 
@@ -91,15 +97,15 @@ describe(`${PROVIDER} provider verification`, () => {
                     await seedBuyerAndProduct()
                     await database.dataSource.query(
                         `INSERT INTO orders (id, user_id, status, total)
-                         OVERRIDING SYSTEM VALUE
+                             OVERRIDING SYSTEM VALUE
                          VALUES (1, 1, 'paid', 149900)
-                         ON CONFLICT (id) DO NOTHING`,
+                             ON CONFLICT (id) DO NOTHING`,
                     )
                     await database.dataSource.query(
                         `INSERT INTO order_items (id, order_id, product_id, quantity, unit_price)
-                         OVERRIDING SYSTEM VALUE
+                             OVERRIDING SYSTEM VALUE
                          VALUES (1, 1, 1, 1, 149900)
-                         ON CONFLICT (id) DO NOTHING`,
+                             ON CONFLICT (id) DO NOTHING`,
                     )
                 },
             },
