@@ -2,13 +2,15 @@ import 'reflect-metadata'
 import { AppDataSource } from './data-source'
 import { connectBroker } from './messaging/broker'
 import { PREFETCH, startConsumer } from './messaging/order-placed.consumer'
+import { relayBatch } from './messaging/outbox-relay'
 import {
     countReceipts,
     createPlaceOrder,
+    createPublisher,
     prepareFixture,
     printSummary,
     queueDepths,
-    resetQueues,
+    resetMessaging,
     waitFor,
 } from './messaging/demo-support'
 
@@ -24,17 +26,17 @@ const main = async (): Promise<number> => {
     try {
         const { buyer, product } = await prepareFixture(AppDataSource)
 
-        await resetQueues(channel)
+        await resetMessaging(AppDataSource, connection, channel)
 
         const consumer = await startConsumer({ connection, dataSource: AppDataSource })
-        const placeOrder = await createPlaceOrder(AppDataSource, connection)
-
-        let published = 0
+        const placeOrder = createPlaceOrder(AppDataSource)
 
         for (let index = 0; index < ORDERS; index += 1) {
             await placeOrder.place({ userId: buyer.id, items: [{ productId: product.id, quantity: 1 }] })
-            published += 1
         }
+
+        const publisher = await createPublisher(connection)
+        const published = await relayBatch(AppDataSource, publisher)
 
         await waitFor(() => consumer.stats.acked >= ORDERS, WAIT_MS)
         await consumer.stop()

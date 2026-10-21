@@ -32,6 +32,14 @@ export class OrdersRepository {
         })
     }
 
+    findByIdempotencyKey(userId: string, idempotencyKey: string): Promise<Order | null> {
+        return this.dataSource.getRepository(Order).findOne({
+            where: { userId, idempotencyKey },
+            relations: { items: { product: true } },
+            order: { items: { id: 'ASC' } },
+        })
+    }
+
     async findOwnerId(id: string): Promise<string | null> {
         const order = await this.dataSource.getRepository(Order).findOne({
             where: { id },
