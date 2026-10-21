@@ -10,11 +10,14 @@ import type { OrderResponse } from '../../src/controllers/orders.controller'
 import type { JoinAck } from '../../src/gateways/orders.gateway'
 import type { OrderStatusEvent } from '../../src/services/order-events.service'
 import { startTestDatabase } from '../integration/testkit/database'
+import { startTestBroker } from '../integration/testkit/broker'
+import type { TestBroker } from '../integration/testkit/broker'
 import type { TestDatabase } from '../integration/testkit/database'
 import { insertProduct, insertUser } from '../integration/testkit/builders'
 
 describe('order status realtime (e2e)', () => {
     let database: TestDatabase
+    let broker: TestBroker
     let app: INestApplication
     let baseUrl: string
     let sockets: Socket[] = []
@@ -96,7 +99,9 @@ describe('order status realtime (e2e)', () => {
 
     beforeAll(async () => {
         database = await startTestDatabase()
+        broker = await startTestBroker()
         process.env.DATABASE_URL = database.container.getConnectionUri()
+        process.env.BROKER_URL = broker.url
 
         const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile()
 
@@ -117,6 +122,7 @@ describe('order status realtime (e2e)', () => {
     afterAll(async () => {
         await app?.close()
         await database?.stop()
+        await broker?.stop()
     })
 
     it('should change the status and return the updated order', async () => {

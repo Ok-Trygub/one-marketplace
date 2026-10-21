@@ -5,6 +5,7 @@ import { Product } from '../entities/product.entity'
 import { Order } from '../entities/order.entity'
 import { OrderItem } from '../entities/order-item.entity'
 import { Job } from '../entities/job.entity'
+import { Receipt } from '../entities/receipt.entity'
 
 export type DatabaseConnection =
     | { url: string }
@@ -15,7 +16,7 @@ export const buildDataSourceOptions = (
 ): PostgresDataSourceOptions => ({
     type: 'postgres',
     ...connection,
-    entities: [User, Product, Order, OrderItem, Job],
+    entities: [User, Product, Order, OrderItem, Job, Receipt],
     migrations: [path.join(__dirname, '..', 'migrations', '*.js')],
     synchronize: false,
 })
