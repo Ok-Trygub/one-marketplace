@@ -1,4 +1,5 @@
-import type { Order } from '../entities/order.entity'
+export const ORDER_AGGREGATE_TYPE = 'Order'
+export const ORDER_PLACED_TYPE = 'order.placed'
 
 export type OrderPlacedEvent = {
     eventId: string
@@ -12,11 +13,19 @@ export type OrderPlacedEvent = {
     }
 }
 
+export type OrderPlacedSource = {
+    id: string
+    userId: string
+    total: number
+    createdAt: Date
+    items: { productId: string; quantity: number; unitPrice: number }[]
+}
+
 export const orderPlacedEventId = (orderId: string): string => `order.placed:${orderId}`
 
-export const orderPlacedEvent = (order: Order): OrderPlacedEvent => ({
+export const toOrderPlacedEvent = (order: OrderPlacedSource): OrderPlacedEvent => ({
     eventId: orderPlacedEventId(order.id),
-    type: 'order.placed',
+    type: ORDER_PLACED_TYPE,
     occurredAt: order.createdAt.toISOString(),
     data: {
         orderId: order.id,
