@@ -34,13 +34,22 @@
     "demo:workers": "bash scripts/with-secrets.sh dev node dist/src/demo-workers.js",
     "demo:retry": "bash scripts/with-secrets.sh dev node dist/src/demo-retry.js",
     "consume": "bash scripts/with-secrets.sh dev node dist/src/consumer.js",
+    "relay": "bash scripts/with-secrets.sh dev node dist/src/relay.js",
     "demo:publish": "bash scripts/with-secrets.sh dev node dist/src/demo-publish.js",
     "demo:dlq": "bash scripts/with-secrets.sh dev node dist/src/demo-dlq.js",
     "demo:duplicate": "bash scripts/with-secrets.sh dev node dist/src/demo-duplicate.js",
+    "demo:outbox": "bash scripts/with-secrets.sh dev node dist/src/demo-outbox.js",
+    "demo:crash-write": "bash scripts/with-secrets.sh dev node dist/src/demo-crash-write.js",
+    "demo:crash-relay": "bash scripts/with-secrets.sh dev node dist/src/demo-crash-relay.js",
     "test:integration": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest integration",
     "test:e2e": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest e2e",
     "test:contract": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest contract/consumer",
-    "verify:provider": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest contract/provider"
+    "verify:provider": "npm run build && NODE_OPTIONS=--experimental-vm-modules jest contract/provider",
+    "demo:cache": "bash scripts/with-secrets.sh dev node dist/src/demo-cache.js",
+    "demo:session": "bash scripts/with-secrets.sh dev node dist/src/demo-session.js",
+    "demo:ratelimit": "bash scripts/with-secrets.sh dev node dist/src/demo-ratelimit.js",
+    "demo:queue": "bash scripts/with-secrets.sh dev node dist/src/demo-queue.js",
+    "worker": "bash scripts/with-secrets.sh dev node dist/src/worker.js"
   },
   "devDependencies": {
     "@nestjs/testing": "^12.0.1",
@@ -56,7 +65,7 @@
     "nodemon": "^3.1.14",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.3.0",
-    "typescript": "^6.0.3"
+    "typescript": "~6.0.3"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -66,8 +75,10 @@
     "@nestjs/platform-socket.io": "^12.1.2",
     "@nestjs/websockets": "^12.1.2",
     "amqplib": "^2.2.0",
+    "bullmq": "^6.4.0",
     "express": "^4.22.2",
     "express-openapi-validator": "^5.6.2",
+    "ioredis": "^5.11.1",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

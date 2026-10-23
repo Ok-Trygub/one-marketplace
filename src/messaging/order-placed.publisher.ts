@@ -6,8 +6,8 @@ import { EVENTS_EXCHANGE, ORDER_PLACED_ROUTING_KEY, assertEventsExchange } from 
 import type { OrderPlacedEvent } from './order-placed.event'
 
 export class UnroutableEventError extends Error {
-    constructor(eventId: string) {
-        super(`event ${eventId} was returned by the broker: no queue is bound to ${ORDER_PLACED_ROUTING_KEY}`)
+    constructor(messageId: string) {
+        super(`message ${messageId} was returned by the broker: no queue is bound to ${ORDER_PLACED_ROUTING_KEY}`)
         this.name = 'UnroutableEventError'
     }
 }
@@ -35,7 +35,7 @@ export class OrderPlacedPublisher implements OnModuleInit {
         this.channel = channel
     }
 
-    async publish(event: OrderPlacedEvent): Promise<void> {
+    async publish(event: OrderPlacedEvent, messageId: string): Promise<void> {
         if (!this.channel) {
             throw new Error('publisher channel is not open')
         }
@@ -48,7 +48,7 @@ export class OrderPlacedPublisher implements OnModuleInit {
                 persistent: true,
                 mandatory: true,
                 contentType: 'application/json',
-                messageId: event.eventId,
+                messageId,
                 type: event.type,
                 timestamp: Math.floor(Date.parse(event.occurredAt) / 1000),
             },
@@ -56,8 +56,8 @@ export class OrderPlacedPublisher implements OnModuleInit {
 
         await this.channel.waitForConfirms()
 
-        if (this.returned.delete(event.eventId)) {
-            throw new UnroutableEventError(event.eventId)
+        if (this.returned.delete(messageId)) {
+            throw new UnroutableEventError(messageId)
         }
     }
 }

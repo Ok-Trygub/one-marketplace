@@ -1,7 +1,10 @@
-import { Body, Controller, Get, Headers, HttpCode, Post, Res } from '@nestjs/common'
+import { Body, Controller, Get, Headers, HttpCode, NotFoundException, Param, Post, Res, UseGuards } from '@nestjs/common'
 import type { Response } from 'express'
 import { ProductsRepository } from '../repositories/products.repository'
+import { ProductCardService } from '../services/product-card.service'
+import type { ProductCard } from '../services/product-card.service'
 import { handleIdempotency } from '../services/idempotency.service'
+import { RateLimitGuard } from '../http/rate-limit.guard'
 import type { Product } from '../entities/product.entity'
 
 export type ProductResponse = {
@@ -25,15 +28,32 @@ export const toProductResponse = (product: Product): ProductResponse => ({
     stock: product.stock,
 })
 
+const isId = (value: string): boolean => /^\d+$/.test(value)
+
 @Controller('products')
 export class ProductsController {
-    constructor(private readonly products: ProductsRepository) {}
+    constructor(
+        private readonly products: ProductsRepository,
+        private readonly productCards: ProductCardService,
+    ) {}
 
     @Get()
     async list(): Promise<{ items: ProductResponse[]; next_cursor: null }> {
         const products = await this.products.findAll()
 
         return { items: products.map(toProductResponse), next_cursor: null }
+    }
+
+    @Get(':id')
+    @UseGuards(RateLimitGuard)
+    async getById(@Param('id') id: string): Promise<ProductCard> {
+        const card = isId(id) ? await this.productCards.get(id) : null
+
+        if (!card) {
+            throw new NotFoundException(`Product '${id}' was not found`)
+        }
+
+        return card
     }
 
     @Post()
