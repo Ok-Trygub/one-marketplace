@@ -15,6 +15,14 @@ export const envSchema = z.object({
         protocol: /^amqps?$/,
     }),
 
+    REDIS_URL: z.url({
+        protocol: /^rediss?$/,
+    }),
+
+    REDIS_QUEUE_URL: z.url({
+        protocol: /^rediss?$/,
+    }),
+
     LOG_LEVEL: z
         .enum(['debug', 'info', 'warn', 'error'])
         .default('info'),

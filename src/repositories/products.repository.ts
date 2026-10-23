@@ -17,8 +17,18 @@ export type ProductRevenue = {
     revenue: string
 }
 
+export type ProductCardRow = {
+    id: string
+    name: string
+    price: number
+    stock: number
+    unitsSold: number
+}
+
 @Injectable()
 export class ProductsRepository {
+    cardQueries = 0
+
     constructor(private readonly dataSource: DataSource) {}
 
     create(input: CreateProductInput): Promise<Product> {
@@ -33,6 +43,24 @@ export class ProductsRepository {
 
     findAll(): Promise<Product[]> {
         return this.dataSource.getRepository(Product).find({ order: { id: 'ASC' } })
+    }
+
+    findCard(id: string): Promise<ProductCardRow | undefined> {
+        this.cardQueries += 1
+
+        return this.dataSource
+            .getRepository(Product)
+            .createQueryBuilder('product')
+            .leftJoin('product.orderItems', 'item')
+            .leftJoin('item.order', 'o', 'o.status = :status', { status: 'paid' })
+            .select('product.id', 'id')
+            .addSelect('product.name', 'name')
+            .addSelect('product.price', 'price')
+            .addSelect('product.stock', 'stock')
+            .addSelect('COALESCE(SUM(item.quantity) FILTER (WHERE o.id IS NOT NULL), 0)::int', 'unitsSold')
+            .where('product.id = :id', { id })
+            .groupBy('product.id')
+            .getRawOne<ProductCardRow>()
     }
 
     revenueByProduct(): Promise<ProductRevenue[]> {

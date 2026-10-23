@@ -97,6 +97,57 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /products/{id}:
+    get:
+      operationId: getProductCard
+      summary: Get a product card with the number of units sold
+
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the product.
+          schema:
+            type: string
+        - name: X-User-Id
+          in: header
+          required: false
+          description: Identifier of the client for the rate limit. Without it the limit is counted per IP address.
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Product card retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductCard'
+
+        '404':
+          description: Product not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: The client exceeded the rate limit
+          headers:
+            Retry-After:
+              description: Number of seconds after which the request may be retried.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /orders:
     get:
       operationId: listOrders
@@ -344,6 +395,75 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /sessions:
+    post:
+      operationId: createSession
+      summary: Start a session for a user
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSession'
+
+      responses:
+        '201':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: User not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /sessions/me:
+    get:
+      operationId: getCurrentSession
+      summary: Read the current session and extend its lifetime
+
+      parameters:
+        - name: X-Session-Token
+          in: header
+          required: false
+          description: Token returned by POST /sessions. Every successful read resets the session lifetime.
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Session is active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          description: X-Session-Token header is missing or the session has expired
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   schemas:
     Product:
@@ -363,6 +483,29 @@ components:
         stock:
           type: integer
           minimum: 0
+    ProductCard:
+      type: object
+      required:
+        - id
+        - name
+        - price_cents
+        - stock
+        - units_sold
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price_cents:
+          type: integer
+          minimum: 0
+        stock:
+          type: integer
+          minimum: 0
+        units_sold:
+          type: integer
+          minimum: 0
+          description: Number of units sold in paid orders.
     ProductList:
       type: object
       required:
@@ -497,6 +640,32 @@ components:
             - pending
             - paid
             - cancelled
+    CreateSession:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          description: Identifier of the user who starts the session.
+    Session:
+      type: object
+      required:
+        - token
+        - user_id
+        - created_at
+      properties:
+        token:
+          type: string
+          description: Session token to send in the X-Session-Token header.
+        user_id:
+          type: string
+          description: Identifier of the session owner.
+        created_at:
+          type: string
+          format: date-time
+          description: Date and time when the session was started.
     Problem:
       type: object
       required:

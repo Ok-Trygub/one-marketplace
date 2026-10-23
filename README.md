@@ -460,18 +460,18 @@ For order status notifications in production I would keep SSE. The flow is one-w
 ## Async-події через RabbitMQ
 
 ```
-POST /orders → PlaceOrderService → checkout, COMMIT → OrderPlacedPublisher → [shop.events] topic
-                                                                                   │ binding order.placed
-                                                                                   ▼
-                                                                         (shop.order-placed) quorum, x-delivery-limit 3
-                                                                                   │ consumer: prefetch 10, manual ack
-                                                                                   ├─ INSERT receipts ON CONFLICT DO NOTHING → ack
-                                                                                   └─ poison or delivery limit → [shop.dlx] → (shop.dlq)
+POST /orders → PlaceOrderService → checkout + outbox, COMMIT → relay → publisher → [shop.events] topic
+                                                                                         │ binding order.placed
+                                                                                         ▼
+                                                                               (shop.order-placed) quorum, x-delivery-limit 3
+                                                                                         │ consumer: prefetch 10, manual ack
+                                                                                         ├─ processed_messages + receipts ON CONFLICT DO NOTHING, one transaction → ack
+                                                                                         └─ poison or delivery limit → [shop.dlx] → (shop.dlq)
 ```
 
 - `src/messaging/topology.ts` declares the exchange `shop.events`, the quorum queue `shop.order-placed` bound to `order.placed`, and the dead-letter contour `shop.dlx` with the queue `shop.dlq`. The consumer and the demos declare it; the publisher asserts only the exchange and knows nothing about queues.
 - `src/messaging/order-placed.event.ts` is the event contract: `eventId`, `type`, `occurredAt` and `data` with the order id, buyer, total and items. `eventId` is `order.placed:<order id>`, stable across republishes.
-- `src/services/place-order.service.ts` runs the checkout transaction and publishes the event after `COMMIT`. `src/messaging/order-placed.publisher.ts` publishes on a confirm channel with `mandatory: true` and waits for the confirm; a message the broker returns as unroutable becomes an error.
+- `src/services/place-order.service.ts` runs the checkout transaction, which writes the event into `outbox`; the relay publishes it, see «Outbox та ідемпотентність». `src/messaging/order-placed.publisher.ts` publishes on a confirm channel with `mandatory: true` and waits for the confirm; a message the broker returns as unroutable becomes an error.
 - `src/messaging/order-placed.consumer.ts` consumes with `noAck: false` and `prefetch 10`; the effect is one `INSERT` into `receipts` with a unique `event_id` and `ON CONFLICT DO NOTHING`, the ack comes after it. A message that is not valid JSON or does not match the contract is rejected without requeue; a database failure requeues it, and the quorum queue dead-letters it after 3 deliveries.
 - `src/consumer.ts` runs the consumer as a separate process: `npm run consume`. Start it before the API on a fresh broker, because it declares the topology.
 - RabbitMQ `4.2.9-management` in `docker-compose.yml`, the LTS series; `BROKER_URL` lives in Infisical next to the database connection.
@@ -494,9 +494,42 @@ Every demo resets its own state first: the demo buyer and product are upserted, 
 
 **At-least-once, not exactly-once.** RabbitMQ delivers at least once: a consumer that dies between the effect and the ack gets the same message again, `demo:duplicate` shows this with `deliveries=2`. The delivery itself is never exactly-once, nothing can make it so. What makes the result happen once is the idempotent effect: the receipt is inserted by a natural key, the `eventId`, with `ON CONFLICT DO NOTHING`, so the second delivery inserts nothing and is acked as a duplicate. The dedup store is the `receipts` table, not process memory, so it survives a restart and is shared by every consumer instance. The duplicate is produced by `kill -9` of a child consumer process whose ack is delayed by `CONSUMER_ACK_DELAY_MS`, which is how a crash looks to the broker: the connection drops and the unacked message is requeued.
 
-**Two gaps that stay open until the outbox.** The publisher runs after `COMMIT`, so a crash between the commit and the publish leaves an order without an event; a publish failure is logged with the `eventId`, not retried. On the consumer side the mark and the effect are the same row, so there is no gap between them, but a crash between the effect and the ack is exactly the duplicate above. The transactional outbox and `processed_messages` in one commit close the producer side later.
+**Producer gap.** Before the outbox the event was published after `COMMIT`, and a crash between the two left an order without an event. The outbox below closes this gap.
 
 **DLQ.** `x-dead-letter-exchange` is set as a queue argument of `shop.order-placed`; a poison message is rejected with `requeue=false` and arrives in `shop.dlq` with `x-first-death-reason: rejected`, a message that keeps failing arrives with `delivery_limit` after the third delivery. The dead-letter strategy is the default `at-most-once`: `at-least-once` needs `overflow: reject-publish` on the source queue and silently falls back otherwise.
+
+## Outbox та ідемпотентність
+
+The checkout transaction writes the order and the `outbox` row in one `COMMIT`. The relay `npm run relay` selects unpublished rows with `FOR UPDATE SKIP LOCKED`, publishes each with `messageId` equal to the outbox id and then sets `published_at`. The consumer writes the `processed_messages` mark and the receipt in one transaction: the inbox stops a repeated `messageId`, and `receipts.order_id` with `ON CONFLICT DO NOTHING` stops the same order under a new one. `Idempotency-Key` is stored in `orders` with a unique index on `user_id, idempotency_key`; a concurrent second request gets `23505` and returns the existing order.
+
+| Demo | My run |
+|---|---|
+| `demo:outbox` | `requests=2 replays=1 orders=1 outbox=1 published=1 deliveries=1 effect=1 processed=1` |
+| `demo:crash-write` | `write-failed=1 orders=0 outbox=0 published=0 deliveries=0 effect=0` |
+| `demo:crash-relay` | `crashes=1 published=1 deliveries=2 applied=1 duplicates=1 effect=1 processed=1` |
+
+**Crash method.** A modelled crash: an exception thrown by the hook `afterOutboxWrite` in checkout and by the hook `afterPublish` in the relay, between the publish and `UPDATE published_at`. The exception rolls back the open transaction, which is what Postgres does when the process is killed.
+
+**Why publish and `UPDATE published_at` cannot swap.** If the row is marked first and the process dies before the publish, the row is marked as published but the broker never got it, nothing retries it, and the event is lost. In the order publish then `UPDATE` the same crash leaves the row unmarked and the next pass publishes it again. The choice is between a duplicate and a loss: the idempotent consumer removes the duplicate, nothing repairs the loss.
+
+**Outbox cleanup.** A periodic job deletes rows with `published_at` older than 7 days in batches; unpublished rows are never deleted.
+
+## Redis: кеш, сесії, ліміти, черга
+
+Two instances: the cache `redis-cache` needs `allkeys-lru` with `maxmemory`, BullMQ needs `noeviction`, and one process has one `maxmemory-policy`; the queue instance `redis-queue` also runs AOF `everysec`.
+
+Sessions are stored in `redis-queue`, because `allkeys-lru` in the cache instance would evict an active session.
+
+Rate limit is a sliding window, because bursts are not allowed: a fixed window lets 2 × limit through at the window edge.
+
+| Demo | My run |
+|---|---|
+| `demo:cache` | `cache-lru=1 cache-maxmemory=1 warmed=50 ttl-distinct=32 concurrent=50 db-calls=1 db-calls-warm=0` |
+| `demo:session` | `requests=3 sessions=1 in-redis=1 ttl-renewed=1` |
+| `demo:ratelimit` | `instances=2 limit=10 requests=20 allowed=10 blocked=10 status=429 retry-after=1` |
+| `demo:queue` | `queue-noeviction=1 attempts=3 completed=1 added=2 queued=1 schedulers=1 scheduled-runs=2` |
+
+**If the stampede lock breaks**, for example its TTL expires while the owner is paused, two readers load the same product card from the database and both write the same value to the cache. The cost is one extra read; no state is corrupted, because the card is derived data and the database stays the source of truth.
 
 ## Grading
 
@@ -505,6 +538,9 @@ docker compose up -d --wait
 export DB_HOST=127.0.0.1 DB_PORT=6432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
 export DATABASE_URL=postgres://app_user:first-pass@127.0.0.1:6432/marketplace
 export BROKER_URL=amqp://app_user:first-pass@127.0.0.1:5672
+export REDIS_URL=redis://127.0.0.1:6390
+export REDIS_QUEUE_URL=redis://127.0.0.1:6391
+export PORT=5001
 export SKIP_VAULT=1    # у грейдера немає доступу до сховища
 npm ci
 npm run build
@@ -516,6 +552,13 @@ npm run demo:retry
 npm run demo:publish; echo "exit=$?"
 npm run demo:dlq; echo "exit=$?"
 npm run demo:duplicate; echo "exit=$?"
+npm run demo:outbox; echo "exit=$?"
+npm run demo:crash-write; echo "exit=$?"
+npm run demo:crash-relay; echo "exit=$?"
+npm run demo:cache; echo "exit=$?"
+npm run demo:session; echo "exit=$?"
+npm run demo:ratelimit; echo "exit=$?"
+npm run demo:queue; echo "exit=$?"
 bash scripts/with-secrets.sh dev bash scripts/backup.sh
 bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
 npm run test:integration

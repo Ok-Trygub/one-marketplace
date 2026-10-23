@@ -19,6 +19,7 @@ import { OrderItem } from './order-item.entity'
 @Index('orders_cancelled_created_at_idx', ['createdAt'], {
     where: "status = 'cancelled'",
 })
+@Index('orders_user_id_idempotency_key_key', ['userId', 'idempotencyKey'], { unique: true })
 export class Order {
     @PrimaryGeneratedColumn('identity', {
         type: 'bigint',
@@ -41,6 +42,9 @@ export class Order {
 
     @Column({ type: 'integer' })
     total!: number
+
+    @Column({ type: 'text', name: 'idempotency_key', nullable: true })
+    idempotencyKey!: string | null
 
     @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
     createdAt!: Date
