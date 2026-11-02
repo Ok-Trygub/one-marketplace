@@ -12,10 +12,15 @@ import {
     Post,
     Query,
     Res,
-    UnauthorizedException,
     UnprocessableEntityException,
+    UseGuards,
 } from '@nestjs/common'
 import type { Response } from 'express'
+import { AuthGuard } from '../auth/auth.guard'
+import type { AuthenticatedUser } from '../auth/authenticated-user'
+import { CurrentUser } from '../auth/current-user.decorator'
+import { Roles } from '../auth/roles.decorator'
+import { RolesGuard } from '../auth/roles.guard'
 import { OrdersRepository } from '../repositories/orders.repository'
 import { CheckoutError } from '../services/checkout.service'
 import { OrderEventsService } from '../services/order-events.service'
@@ -42,7 +47,6 @@ export type OrderResponse = {
 }
 
 export type CreateOrderBody = {
-    user_id: string
     items: { product_id: string; quantity: number }[]
 }
 
@@ -102,6 +106,7 @@ const translateOrderStatusError = (error: unknown): never => {
 }
 
 @Controller('orders')
+@UseGuards(AuthGuard, RolesGuard)
 export class OrdersController {
     constructor(
         private readonly orders: OrdersRepository,
@@ -111,8 +116,11 @@ export class OrdersController {
     ) {}
 
     @Get()
-    async list(@Query('limit') limit?: string): Promise<{ items: OrderResponse[]; next_cursor: null }> {
-        const orders = await this.orders.listRecent(limit ? Number(limit) : 20)
+    async list(
+        @CurrentUser() user: AuthenticatedUser,
+        @Query('limit') limit?: string,
+    ): Promise<{ items: OrderResponse[]; next_cursor: null }> {
+        const orders = await this.orders.listByUser(user.id, limit ? Number(limit) : 20)
 
         return { items: orders.map(toOrderResponse), next_cursor: null }
     }
@@ -120,14 +128,11 @@ export class OrdersController {
     @Post()
     @HttpCode(201)
     async create(
+        @CurrentUser() user: AuthenticatedUser,
         @Headers('idempotency-key') idempotencyKey: string,
         @Body() body: CreateOrderBody,
         @Res({ passthrough: true }) response: Response,
     ): Promise<OrderResponse> {
-        if (!isId(body.user_id)) {
-            throw new NotFoundException(`Buyer '${body.user_id}' was not found`)
-        }
-
         const unknownProduct = body.items.find((item) => !isId(item.product_id))
 
         if (unknownProduct) {
@@ -136,7 +141,7 @@ export class OrdersController {
 
         const placed: PlacedOrder = await this.placeOrder
             .place({
-                userId: body.user_id,
+                userId: user.id,
                 items: body.items.map((item) => ({
                     productId: item.product_id,
                     quantity: item.quantity,
@@ -153,17 +158,18 @@ export class OrdersController {
     }
 
     @Get(':id')
-    async getById(@Param('id') id: string): Promise<OrderResponse> {
-        const order = isId(id) ? await this.orders.findById(id) : null
+    async getById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<OrderResponse> {
+        const order = await this.load(id)
 
-        if (!order) {
-            throw new NotFoundException(`Order '${id}' was not found`)
+        if (order.userId !== user.id) {
+            throw new ForbiddenException(`Order '${id}' belongs to another buyer`)
         }
 
         return toOrderResponse(order)
     }
 
     @Patch(':id/status')
+    @Roles('seller', 'admin')
     async changeStatus(
         @Param('id') id: string,
         @Body() body: ChangeOrderStatusBody,
@@ -174,27 +180,23 @@ export class OrdersController {
 
         await this.orderStatus.change(id, body.status).catch(translateOrderStatusError)
 
-        return this.getById(id)
+        return toOrderResponse(await this.load(id))
     }
 
     @Get(':id/events')
     async streamEvents(
+        @CurrentUser() user: AuthenticatedUser,
         @Param('id') id: string,
-        @Headers('x-user-id') userId: string | undefined,
         @Headers('last-event-id') lastEventId: string | undefined,
         @Res() response: Response,
     ): Promise<void> {
-        if (!userId || !isId(userId)) {
-            throw new UnauthorizedException('X-User-Id header with the buyer id is required')
-        }
-
         const ownerId = isId(id) ? await this.orders.findOwnerId(id) : null
 
         if (!ownerId) {
             throw new NotFoundException(`Order '${id}' was not found`)
         }
 
-        if (ownerId !== userId) {
+        if (ownerId !== user.id) {
             throw new ForbiddenException(`Order '${id}' belongs to another buyer`)
         }
 
@@ -219,5 +221,15 @@ export class OrdersController {
         })
 
         response.on('close', () => subscription.unsubscribe())
+    }
+
+    private async load(id: string): Promise<Order> {
+        const order = isId(id) ? await this.orders.findById(id) : null
+
+        if (!order) {
+            throw new NotFoundException(`Order '${id}' was not found`)
+        }
+
+        return order
     }
 }

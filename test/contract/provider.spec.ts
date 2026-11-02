@@ -11,6 +11,7 @@ import { startTestBroker } from '../integration/testkit/broker'
 import type { TestBroker } from '../integration/testkit/broker'
 import type { TestDatabase } from '../integration/testkit/database'
 import { PACT_FILE, PROVIDER } from './pact'
+import { bearer } from '../integration/testkit/auth'
 
 const providerVersion = (): string => {
     if (process.env.PACT_VERSION) {
@@ -86,9 +87,18 @@ describe(`${PROVIDER} provider verification`, () => {
             )
         }
 
+        const buyerAuthorization = await bearer(app, { id: '1', role: 'buyer' })
+
         const output = await new Verifier({
             provider: PROVIDER,
             providerBaseUrl,
+            requestFilter: (request, _response, next) => {
+                if (request.headers.authorization) {
+                    request.headers.authorization = buyerAuthorization
+                }
+
+                next()
+            },
             providerVersion: providerVersion(),
             logLevel: 'warn',
             stateHandlers: {

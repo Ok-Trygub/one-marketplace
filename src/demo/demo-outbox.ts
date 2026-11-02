@@ -1,22 +1,23 @@
 import 'reflect-metadata'
-import { setTimeout as sleep } from 'node:timers/promises'
-import { AppDataSource } from './data-source'
-import { connectBroker } from './messaging/broker'
-import { startConsumer } from './messaging/order-placed.consumer'
-import { relayBatch } from './messaging/outbox-relay'
-import { checkout } from './services/checkout.service'
+import { AppDataSource } from '../data-source'
+import { connectBroker } from '../messaging/broker'
+import { startConsumer } from '../messaging/order-placed.consumer'
+import { relayBatch } from '../messaging/outbox-relay'
 import {
     countOrders,
     countOutbox,
+    countProcessed,
     countReceipts,
+    createPlaceOrder,
     createPublisher,
     prepareFixture,
     printSummary,
     resetMessaging,
-} from './messaging/demo-support'
+    waitFor,
+} from './demo-support'
 
-const CRASH_MESSAGE = 'simulated crash after the outbox write'
-const SETTLE_MS = 1_000
+const IDEMPOTENCY_KEY = 'demo-outbox'
+const WAIT_MS = 10_000
 
 const main = async (): Promise<number> => {
     await AppDataSource.initialize()
@@ -30,51 +31,42 @@ const main = async (): Promise<number> => {
         await resetMessaging(AppDataSource, connection, channel)
 
         const consumer = await startConsumer({ connection, dataSource: AppDataSource })
-
-        let writeFailed = 0
-
-        try {
-            await checkout(
-                AppDataSource,
-                { userId: buyer.id, items: [{ productId: product.id, quantity: 1 }] },
-                {
-                    afterOutboxWrite: () => {
-                        throw new Error(CRASH_MESSAGE)
-                    },
-                },
-            )
-        } catch (error) {
-            if (!(error instanceof Error) || error.message !== CRASH_MESSAGE) {
-                throw error
-            }
-
-            writeFailed += 1
+        const placeOrder = createPlaceOrder(AppDataSource)
+        const input = {
+            userId: buyer.id,
+            items: [{ productId: product.id, quantity: 1 }],
+            idempotencyKey: IDEMPOTENCY_KEY,
         }
+
+        const results = await Promise.all([placeOrder.place(input), placeOrder.place(input)])
 
         const publisher = await createPublisher(connection)
 
         await relayBatch(AppDataSource, publisher)
-        await sleep(SETTLE_MS)
+        await waitFor(() => consumer.stats.acked >= 1, WAIT_MS)
         await consumer.stop()
 
         const summary = {
-            'write-failed': writeFailed,
+            requests: results.length,
+            replays: results.filter((result) => result.replay).length,
             orders: await countOrders(AppDataSource, buyer.id),
             outbox: await countOutbox(AppDataSource, buyer.id),
             published: await countOutbox(AppDataSource, buyer.id, true),
             deliveries: consumer.stats.delivered,
             effect: await countReceipts(AppDataSource, buyer.id),
+            processed: await countProcessed(AppDataSource, buyer.id),
         }
 
         printSummary(summary)
 
         const ok =
-            summary['write-failed'] === 1 &&
-            summary.orders === 0 &&
-            summary.outbox === 0 &&
-            summary.published === 0 &&
-            summary.deliveries === 0 &&
-            summary.effect === 0
+            summary.requests === 2 &&
+            summary.orders === 1 &&
+            summary.outbox === 1 &&
+            summary.published === 1 &&
+            summary.deliveries === 1 &&
+            summary.effect === 1 &&
+            summary.processed === 1
 
         return ok ? 0 : 1
     } finally {

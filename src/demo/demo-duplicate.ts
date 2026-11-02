@@ -2,10 +2,10 @@ import 'reflect-metadata'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { createInterface } from 'node:readline'
-import { AppDataSource } from './data-source'
-import { connectBroker } from './messaging/broker'
-import { startConsumer } from './messaging/order-placed.consumer'
-import { relayBatch } from './messaging/outbox-relay'
+import { AppDataSource } from '../data-source'
+import { connectBroker } from '../messaging/broker'
+import { startConsumer } from '../messaging/order-placed.consumer'
+import { relayBatch } from '../messaging/outbox-relay'
 import {
     countReceipts,
     createPlaceOrder,
@@ -14,7 +14,7 @@ import {
     printSummary,
     resetMessaging,
     waitFor,
-} from './messaging/demo-support'
+} from './demo-support'
 
 const WAIT_MS = 10_000
 const ACK_DELAY_MS = 5_000
@@ -26,7 +26,7 @@ type CrashingConsumer = {
 }
 
 const startCrashingConsumer = async (): Promise<CrashingConsumer> => {
-    const child = spawn(process.execPath, [path.join(__dirname, 'consumer.js')], {
+    const child = spawn(process.execPath, [path.join(__dirname, '..', 'consumer.js')], {
         env: { ...process.env, CONSUMER_ACK_DELAY_MS: String(ACK_DELAY_MS) },
         stdio: ['ignore', 'pipe', 'inherit'],
     })

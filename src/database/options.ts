@@ -8,6 +8,7 @@ import { Job } from '../entities/job.entity'
 import { Receipt } from '../entities/receipt.entity'
 import { Outbox } from '../entities/outbox.entity'
 import { ProcessedMessage } from '../entities/processed-message.entity'
+import { RefreshToken } from '../entities/refresh-token.entity'
 
 export type DatabaseConnection =
     | { url: string }
@@ -18,7 +19,7 @@ export const buildDataSourceOptions = (
 ): PostgresDataSourceOptions => ({
     type: 'postgres',
     ...connection,
-    entities: [User, Product, Order, OrderItem, Job, Receipt, Outbox, ProcessedMessage],
+    entities: [User, Product, Order, OrderItem, Job, Receipt, Outbox, ProcessedMessage, RefreshToken],
     migrations: [path.join(__dirname, '..', 'migrations', '*.js')],
     synchronize: false,
     uuidExtension: 'pgcrypto',

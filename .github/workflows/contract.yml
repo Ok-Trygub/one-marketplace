@@ -24,8 +24,8 @@ jobs:
 
       - run: npm ci
 
-      - name: Start the Pact broker
-        run: docker compose up -d --wait pact-broker
+      - name: Start the Pact broker and the Redis instance with the token denylist
+        run: docker compose up -d --wait pact-broker redis-queue
 
       - name: Consumer contract test
         run: npm run test:contract

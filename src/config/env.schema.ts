@@ -1,4 +1,18 @@
+import { createPrivateKey, createPublicKey } from 'node:crypto'
+import type { KeyObject } from 'node:crypto'
 import { z } from 'zod'
+
+const isP256Key =
+    (toKey: (pem: string) => KeyObject) =>
+        (value: string): boolean => {
+            try {
+                const key = toKey(Buffer.from(value, 'base64').toString('utf8'))
+
+                return key.asymmetricKeyDetails?.namedCurve === 'prime256v1'
+            } catch {
+                return false
+            }
+        }
 
 export const envSchema = z.object({
     PORT: z.coerce.number().int().min(1).max(65535),
@@ -22,6 +36,18 @@ export const envSchema = z.object({
     REDIS_QUEUE_URL: z.url({
         protocol: /^rediss?$/,
     }),
+
+    JWT_PRIVATE_KEY: z.string().refine(isP256Key(createPrivateKey), {
+        message: 'must be a base64-encoded PEM private key on the P-256 curve',
+    }),
+
+    JWT_PUBLIC_KEY: z.string().refine(isP256Key(createPublicKey), {
+        message: 'must be a base64-encoded PEM public key on the P-256 curve',
+    }),
+
+    JWT_KID: z.string().min(1),
+
+    REFRESH_TOKEN_PEPPER: z.string().min(32),
 
     LOG_LEVEL: z
         .enum(['debug', 'info', 'warn', 'error'])

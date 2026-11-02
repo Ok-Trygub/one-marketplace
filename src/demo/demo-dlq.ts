@@ -1,9 +1,9 @@
 import 'reflect-metadata'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { AppDataSource } from './data-source'
-import { connectBroker } from './messaging/broker'
-import { startConsumer } from './messaging/order-placed.consumer'
-import { DEAD_LETTER_QUEUE, EVENTS_EXCHANGE, ORDER_PLACED_ROUTING_KEY } from './messaging/topology'
+import { AppDataSource } from '../data-source'
+import { connectBroker } from '../messaging/broker'
+import { startConsumer } from '../messaging/order-placed.consumer'
+import { DEAD_LETTER_QUEUE, EVENTS_EXCHANGE, ORDER_PLACED_ROUTING_KEY } from '../messaging/topology'
 import {
     countReceipts,
     prepareFixture,
@@ -11,7 +11,7 @@ import {
     queueDepths,
     resetQueues,
     waitFor,
-} from './messaging/demo-support'
+} from './demo-support'
 
 const WAIT_MS = 10_000
 const DEATH_REASONS = ['rejected', 'expired', 'maxlen', 'delivery_limit']

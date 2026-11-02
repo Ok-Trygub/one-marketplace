@@ -4,10 +4,10 @@ import { User } from '../entities/user.entity'
 import { Product } from '../entities/product.entity'
 import { OrdersRepository } from '../repositories/orders.repository'
 import { PlaceOrderService } from '../services/place-order.service'
-import { OrderPlacedPublisher } from './order-placed.publisher'
-import { RECEIPTS_CONSUMER } from './order-placed.consumer'
-import { relayBatch } from './outbox-relay'
-import { DEAD_LETTER_QUEUE, ORDER_PLACED_QUEUE, assertTopology } from './topology'
+import { OrderPlacedPublisher } from '../messaging/order-placed.publisher'
+import { RECEIPTS_CONSUMER } from '../messaging/order-placed.consumer'
+import { relayBatch } from '../messaging/outbox-relay'
+import { DEAD_LETTER_QUEUE, ORDER_PLACED_QUEUE, assertTopology } from '../messaging/topology'
 
 export const DEMO_BUYER = {
     email: 'demo-rabbitmq@example.com',

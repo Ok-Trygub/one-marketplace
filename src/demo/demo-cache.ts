@@ -1,11 +1,11 @@
 import 'reflect-metadata'
 import { In, Like } from 'typeorm'
-import { AppDataSource } from './data-source'
-import { Product } from './entities/product.entity'
-import { connectCache } from './redis/redis'
-import { ProductsRepository } from './repositories/products.repository'
-import { ProductCardService, productCardKey } from './services/product-card.service'
-import { printSummary } from './messaging/demo-support'
+import { AppDataSource } from '../data-source'
+import { Product } from '../entities/product.entity'
+import { connectCache } from '../redis/redis'
+import { ProductsRepository } from '../repositories/products.repository'
+import { ProductCardService, productCardKey } from '../services/product-card.service'
+import { printSummary } from './demo-support'
 
 const PRODUCT_COUNT = 50
 const CONCURRENT = 50

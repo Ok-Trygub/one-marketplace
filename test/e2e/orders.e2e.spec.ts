@@ -14,6 +14,7 @@ import { startTestBroker } from '../integration/testkit/broker'
 import type { TestBroker } from '../integration/testkit/broker'
 import type { TestDatabase } from '../integration/testkit/database'
 import { insertProduct, insertUser } from '../integration/testkit/builders'
+import { bearer } from '../integration/testkit/auth'
 
 describe('orders (e2e)', () => {
     let database: TestDatabase
@@ -48,11 +49,13 @@ describe('orders (e2e)', () => {
         const kettle = await insertProduct(database.dataSource, { price: 149_900, stock: 10 })
         const laptop = await insertProduct(database.dataSource, { price: 3_999_900, stock: 10 })
 
+        const authorization = await bearer(app, buyer)
+
         const created = await request(app.getHttpServer())
             .post('/orders')
+            .set('Authorization', authorization)
             .set('Idempotency-Key', 'e2e-create-order')
             .send({
-                user_id: buyer.id,
                 items: [
                     { product_id: kettle.id, quantity: 2 },
                     { product_id: laptop.id, quantity: 1 },
@@ -61,6 +64,7 @@ describe('orders (e2e)', () => {
             .expect(201)
 
         expect(created.body).toMatchObject({
+            user_id: buyer.id,
             status: 'paid',
             total_cents: 2 * 149_900 + 3_999_900,
             items: [
@@ -71,15 +75,16 @@ describe('orders (e2e)', () => {
 
         const read = await request(app.getHttpServer())
             .get(`/orders/${created.body.id}`)
+            .set('Authorization', authorization)
             .expect(200)
 
         expect(read.body).toEqual(created.body)
 
         const replay = await request(app.getHttpServer())
             .post('/orders')
+            .set('Authorization', authorization)
             .set('Idempotency-Key', 'e2e-create-order')
             .send({
-                user_id: buyer.id,
                 items: [
                     { product_id: kettle.id, quantity: 2 },
                     { product_id: laptop.id, quantity: 1 },
@@ -95,11 +100,14 @@ describe('orders (e2e)', () => {
         const buyer = await insertUser(database.dataSource)
         const product = await insertProduct(database.dataSource)
 
+        const authorization = await bearer(app, buyer)
+
         const send = () =>
             request(app.getHttpServer())
                 .post('/orders')
+                .set('Authorization', authorization)
                 .set('Idempotency-Key', 'e2e-concurrent')
-                .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 1 }] })
+                .send({ items: [{ product_id: product.id, quantity: 1 }] })
 
         const [first, second] = await Promise.all([send(), send()])
 
@@ -113,17 +121,20 @@ describe('orders (e2e)', () => {
     it('should return 422 when the Idempotency-Key is reused with a different body', async () => {
         const buyer = await insertUser(database.dataSource)
         const product = await insertProduct(database.dataSource)
+        const authorization = await bearer(app, buyer)
 
         await request(app.getHttpServer())
             .post('/orders')
+            .set('Authorization', authorization)
             .set('Idempotency-Key', 'e2e-reused-key')
-            .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 1 }] })
+            .send({ items: [{ product_id: product.id, quantity: 1 }] })
             .expect(201)
 
         const response = await request(app.getHttpServer())
             .post('/orders')
+            .set('Authorization', authorization)
             .set('Idempotency-Key', 'e2e-reused-key')
-            .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 2 }] })
+            .send({ items: [{ product_id: product.id, quantity: 2 }] })
             .expect(422)
 
         expect(response.headers['content-type']).toContain('application/problem+json')
@@ -141,8 +152,9 @@ describe('orders (e2e)', () => {
 
         const created = await request(app.getHttpServer())
             .post('/orders')
+            .set('Authorization', await bearer(app, buyer))
             .set('Idempotency-Key', 'e2e-publish-order')
-            .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 1 }] })
+            .send({ items: [{ product_id: product.id, quantity: 1 }] })
             .expect(201)
 
         const [row] = await database.dataSource.getRepository(Outbox).find()
@@ -166,8 +178,11 @@ describe('orders (e2e)', () => {
     })
 
     it('should return 404 in problem+json for an unknown order', async () => {
+        const buyer = await insertUser(database.dataSource)
+
         const response = await request(app.getHttpServer())
             .get('/orders/999999')
+            .set('Authorization', await bearer(app, buyer))
             .expect(404)
 
         expect(response.headers['content-type']).toContain('application/problem+json')
@@ -175,14 +190,28 @@ describe('orders (e2e)', () => {
     })
 
     it('should return 400 when the body violates the OpenAPI contract', async () => {
-        const response = await request(app.getHttpServer())
+        const buyer = await insertUser(database.dataSource)
+        const product = await insertProduct(database.dataSource)
+        const authorization = await bearer(app, buyer)
+
+        const empty = await request(app.getHttpServer())
             .post('/orders')
+            .set('Authorization', authorization)
             .set('Idempotency-Key', 'e2e-invalid-body')
             .send({ items: [] })
             .expect(400)
 
-        expect(response.headers['content-type']).toContain('application/problem+json')
-        expect(response.body.detail).toContain('user_id')
+        expect(empty.headers['content-type']).toContain('application/problem+json')
+        expect(empty.body.detail).toContain('items')
+
+        const foreignBuyer = await request(app.getHttpServer())
+            .post('/orders')
+            .set('Authorization', authorization)
+            .set('Idempotency-Key', 'e2e-user-id-in-body')
+            .send({ user_id: '1', items: [{ product_id: product.id, quantity: 1 }] })
+            .expect(400)
+
+        expect(foreignBuyer.body.detail).toContain('must NOT have additional properties')
     })
 
     it('should return 409 when the product is out of stock', async () => {
@@ -191,8 +220,37 @@ describe('orders (e2e)', () => {
 
         await request(app.getHttpServer())
             .post('/orders')
+            .set('Authorization', await bearer(app, buyer))
             .set('Idempotency-Key', 'e2e-out-of-stock')
-            .send({ user_id: buyer.id, items: [{ product_id: soldOut.id, quantity: 1 }] })
+            .send({ items: [{ product_id: soldOut.id, quantity: 1 }] })
             .expect(409)
+    })
+
+    it('should return 401 without a token and 403 for an order of another buyer', async () => {
+        const owner = await insertUser(database.dataSource)
+        const stranger = await insertUser(database.dataSource)
+        const product = await insertProduct(database.dataSource)
+
+        await request(app.getHttpServer())
+            .post('/orders')
+            .set('Idempotency-Key', 'e2e-anonymous')
+            .send({ items: [{ product_id: product.id, quantity: 1 }] })
+            .expect(401)
+
+        const created = await request(app.getHttpServer())
+            .post('/orders')
+            .set('Authorization', await bearer(app, owner))
+            .set('Idempotency-Key', 'e2e-owned')
+            .send({ items: [{ product_id: product.id, quantity: 1 }] })
+            .expect(201)
+
+        await request(app.getHttpServer()).get(`/orders/${created.body.id}`).expect(401)
+
+        const foreign = await request(app.getHttpServer())
+            .get(`/orders/${created.body.id}`)
+            .set('Authorization', await bearer(app, stranger))
+            .expect(403)
+
+        expect(foreign.headers['content-type']).toContain('application/problem+json')
     })
 })

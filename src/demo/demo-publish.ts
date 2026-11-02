@@ -1,8 +1,8 @@
 import 'reflect-metadata'
-import { AppDataSource } from './data-source'
-import { connectBroker } from './messaging/broker'
-import { PREFETCH, startConsumer } from './messaging/order-placed.consumer'
-import { relayBatch } from './messaging/outbox-relay'
+import { AppDataSource } from '../data-source'
+import { connectBroker } from '../messaging/broker'
+import { PREFETCH, startConsumer } from '../messaging/order-placed.consumer'
+import { relayBatch } from '../messaging/outbox-relay'
 import {
     countReceipts,
     createPlaceOrder,
@@ -12,7 +12,7 @@ import {
     queueDepths,
     resetMessaging,
     waitFor,
-} from './messaging/demo-support'
+} from './demo-support'
 
 const ORDERS = 5
 const WAIT_MS = 10_000

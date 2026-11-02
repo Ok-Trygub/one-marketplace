@@ -1,10 +1,10 @@
 import 'reflect-metadata'
 import { DataSource, In } from 'typeorm'
 import type { Logger } from 'typeorm'
-import { AppDataSource } from './data-source'
-import { Order } from './entities/order.entity'
-import { OrderItem } from './entities/order-item.entity'
-import { Product } from './entities/product.entity'
+import { AppDataSource } from '../data-source'
+import { Order } from '../entities/order.entity'
+import { OrderItem } from '../entities/order-item.entity'
+import { Product } from '../entities/product.entity'
 
 class QueryCountLogger implements Logger {
     count = 0
