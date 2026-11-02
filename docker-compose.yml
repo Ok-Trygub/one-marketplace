@@ -11,12 +11,18 @@ services:
       PORT: 5001
       DB_URL: postgres://app_user@pgbouncer:6432/marketplace
       BROKER_URL: amqp://app_user:first-pass@rabbitmq:5672
+      REDIS_URL: redis://redis-cache:6379
+      REDIS_QUEUE_URL: redis://redis-queue:6379
     volumes:
       - ./secrets:/app/secrets:ro
     depends_on:
       pgbouncer:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
         condition: service_healthy
 
   postgres:
@@ -63,6 +69,46 @@ services:
       - "5672:5672"
       - "15672:15672"
 
+  redis-cache:
+    image: redis:8.2-alpine
+    command:
+      - redis-server
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    ports:
+      - "6390:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis-queue:
+    image: redis:8.2-alpine
+    command:
+      - redis-server
+      - --maxmemory-policy
+      - noeviction
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+    ports:
+      - "6391:6379"
+    volumes:
+      - redis-queue-data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
   pact-broker:
     image: pactfoundation/pact-broker@sha256:420341d4fbfb00a621c313f47e530ad75703f969bbc7520d0d72bc71bb53cef9
     environment:
@@ -76,3 +122,6 @@ services:
       interval: 3s
       timeout: 5s
       retries: 30
+
+volumes:
+  redis-queue-data:

@@ -516,6 +516,23 @@ The checkout transaction writes the order and the `outbox` row in one `COMMIT`. 
 
 **Relay failures.** Each row is published and marked in its own transaction, so a crash keeps the rows already marked. A row the broker returns as unroutable gets `attempts + 1` and is skipped until the next pass, so it does not block the rows behind it; after 10 attempts the relay stops picking it up until `attempts` is reset. Any other publish error is a broker failure: the relay stops without spending an attempt.
 
+## Redis: кеш, сесії, ліміти, черга
+
+Two instances: the cache `redis-cache` needs `allkeys-lru` with `maxmemory`, BullMQ needs `noeviction`, and one process has one `maxmemory-policy`; the queue instance `redis-queue` also runs AOF `everysec`.
+
+Sessions are stored in `redis-queue`, because `allkeys-lru` in the cache instance would evict an active session.
+
+Rate limit is a sliding window, because bursts are not allowed: a fixed window lets 2 × limit through at the window edge.
+
+| Demo | My run |
+|---|---|
+| `demo:cache` | `cache-lru=1 cache-maxmemory=1 warmed=50 ttl-distinct=32 concurrent=50 db-calls=1 db-calls-warm=0` |
+| `demo:session` | `requests=3 sessions=1 in-redis=1 ttl-renewed=1` |
+| `demo:ratelimit` | `instances=2 limit=10 requests=20 allowed=10 blocked=10 status=429 retry-after=1` |
+| `demo:queue` | `queue-noeviction=1 attempts=3 completed=1 added=2 queued=1 schedulers=1 scheduled-runs=2` |
+
+**If the stampede lock breaks**, for example its TTL expires while the owner is paused, two readers load the same product card from the database and both write the same value to the cache. The cost is one extra read; no state is corrupted, because the card is derived data and the database stays the source of truth.
+
 ## Grading
 
 ```bash
@@ -523,6 +540,9 @@ docker compose up -d --wait
 export DB_HOST=127.0.0.1 DB_PORT=6432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
 export DATABASE_URL=postgres://app_user:first-pass@127.0.0.1:6432/marketplace
 export BROKER_URL=amqp://app_user:first-pass@127.0.0.1:5672
+export REDIS_URL=redis://127.0.0.1:6390
+export REDIS_QUEUE_URL=redis://127.0.0.1:6391
+export PORT=5001
 export SKIP_VAULT=1    # у грейдера немає доступу до сховища
 npm ci
 npm run build
@@ -537,6 +557,10 @@ npm run demo:duplicate; echo "exit=$?"
 npm run demo:outbox; echo "exit=$?"
 npm run demo:crash-write; echo "exit=$?"
 npm run demo:crash-relay; echo "exit=$?"
+npm run demo:cache; echo "exit=$?"
+npm run demo:session; echo "exit=$?"
+npm run demo:ratelimit; echo "exit=$?"
+npm run demo:queue; echo "exit=$?"
 bash scripts/with-secrets.sh dev bash scripts/backup.sh
 bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
 npm run test:integration
