@@ -1,16 +1,17 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { Channel, ChannelModel, ConsumeMessage } from 'amqplib'
 import type { DataSource } from 'typeorm'
-import { Receipt } from '../entities/receipt.entity'
 import { ORDER_PLACED_QUEUE, assertTopology } from './topology'
 import type { OrderPlacedEvent } from './order-placed.event'
 
 export const PREFETCH = 10
+export const RECEIPTS_CONSUMER = 'receipts'
 
 export type ConsumerStats = {
     delivered: number
     effect: number
     skipped: number
+    alreadyApplied: number
     rejected: number
     requeued: number
     acked: number
@@ -28,6 +29,13 @@ export type RunningConsumer = {
     stop: () => Promise<void>
 }
 
+export type IncomingEvent = {
+    messageId: string
+    event: OrderPlacedEvent
+}
+
+export type ApplyResult = 'applied' | 'duplicate' | 'already-applied'
+
 export class PoisonMessageError extends Error {
     constructor(message: string) {
         super(message)
@@ -35,9 +43,17 @@ export class PoisonMessageError extends Error {
     }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const isId = (value: unknown): value is string => typeof value === 'string' && /^\d+$/.test(value)
 
-export const parseEvent = (message: ConsumeMessage): OrderPlacedEvent => {
+export const parseMessage = (message: ConsumeMessage): IncomingEvent => {
+    const messageId: unknown = message.properties.messageId
+
+    if (typeof messageId !== 'string' || !UUID_PATTERN.test(messageId)) {
+        throw new PoisonMessageError('message has no valid messageId')
+    }
+
     let parsed: unknown
 
     try {
@@ -59,29 +75,48 @@ export const parseEvent = (message: ConsumeMessage): OrderPlacedEvent => {
         throw new PoisonMessageError('body does not match the order.placed contract')
     }
 
-    return event as OrderPlacedEvent
+    return { messageId, event: event as OrderPlacedEvent }
 }
 
-export const issueReceipt = async (dataSource: DataSource, event: OrderPlacedEvent): Promise<boolean> => {
-    const result = await dataSource
-        .createQueryBuilder()
-        .insert()
-        .into(Receipt)
-        .values({
-            eventId: event.eventId,
-            orderId: event.data.orderId,
-            total: event.data.total,
-        })
-        .orIgnore()
-        .returning(['id'])
-        .execute()
+export const applyOrderPlaced = (dataSource: DataSource, incoming: IncomingEvent): Promise<ApplyResult> => {
+    const { messageId, event } = incoming
 
-    return result.raw.length === 1
+    return dataSource.transaction(async (manager) => {
+        const marked = await manager.query<{ message_id: string }[]>(
+            `INSERT INTO processed_messages (message_id, consumer)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING
+             RETURNING message_id`,
+            [messageId, RECEIPTS_CONSUMER],
+        )
+
+        if (marked.length === 0) {
+            return 'duplicate'
+        }
+
+        const issued = await manager.query<{ id: string }[]>(
+            `INSERT INTO receipts (event_id, order_id, total)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (order_id) DO NOTHING
+             RETURNING id`,
+            [event.eventId, event.data.orderId, event.data.total],
+        )
+
+        return issued.length === 1 ? 'applied' : 'already-applied'
+    })
 }
 
 export const startConsumer = async (options: ConsumerOptions): Promise<RunningConsumer> => {
     const { connection, dataSource, ackDelayMs = 0 } = options
-    const stats: ConsumerStats = { delivered: 0, effect: 0, skipped: 0, rejected: 0, requeued: 0, acked: 0 }
+    const stats: ConsumerStats = {
+        delivered: 0,
+        effect: 0,
+        skipped: 0,
+        alreadyApplied: 0,
+        rejected: 0,
+        requeued: 0,
+        acked: 0,
+    }
     const channel: Channel = await connection.createChannel()
 
     await assertTopology(channel)
@@ -90,10 +125,10 @@ export const startConsumer = async (options: ConsumerOptions): Promise<RunningCo
     const handle = async (message: ConsumeMessage): Promise<void> => {
         stats.delivered += 1
 
-        let event: OrderPlacedEvent
+        let incoming: IncomingEvent
 
         try {
-            event = parseEvent(message)
+            incoming = parseMessage(message)
         } catch {
             stats.rejected += 1
             channel.reject(message, false)
@@ -102,13 +137,15 @@ export const startConsumer = async (options: ConsumerOptions): Promise<RunningCo
         }
 
         try {
-            const applied = await issueReceipt(dataSource, event)
+            const result = await applyOrderPlaced(dataSource, incoming)
 
-            if (applied) {
+            if (result === 'applied') {
                 stats.effect += 1
-                options.onEffect?.(event)
-            } else {
+                options.onEffect?.(incoming.event)
+            } else if (result === 'duplicate') {
                 stats.skipped += 1
+            } else {
+                stats.alreadyApplied += 1
             }
         } catch {
             stats.requeued += 1

@@ -5,12 +5,14 @@ import { createInterface } from 'node:readline'
 import { AppDataSource } from './data-source'
 import { connectBroker } from './messaging/broker'
 import { startConsumer } from './messaging/order-placed.consumer'
+import { relayBatch } from './messaging/outbox-relay'
 import {
     countReceipts,
     createPlaceOrder,
+    createPublisher,
     prepareFixture,
     printSummary,
-    resetQueues,
+    resetMessaging,
     waitFor,
 } from './messaging/demo-support'
 
@@ -71,12 +73,16 @@ const main = async (): Promise<number> => {
     try {
         const { buyer, product } = await prepareFixture(AppDataSource)
 
-        await resetQueues(channel)
+        await resetMessaging(AppDataSource, connection, channel)
 
         const crashing = await startCrashingConsumer()
-        const placeOrder = await createPlaceOrder(AppDataSource, connection)
+        const placeOrder = createPlaceOrder(AppDataSource)
 
         await placeOrder.place({ userId: buyer.id, items: [{ productId: product.id, quantity: 1 }] })
+
+        const publisher = await createPublisher(connection)
+
+        await relayBatch(AppDataSource, publisher)
         await crashing.waitForEffect()
         await crashing.crash()
 

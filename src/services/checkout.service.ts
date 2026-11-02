@@ -2,6 +2,8 @@ import type { DataSource } from 'typeorm'
 import { Order } from '../entities/order.entity'
 import { OrderItem } from '../entities/order-item.entity'
 import { Job } from '../entities/job.entity'
+import { Outbox } from '../entities/outbox.entity'
+import { ORDER_AGGREGATE_TYPE, toOrderPlacedEvent } from '../messaging/order-placed.event'
 
 export type CheckoutLine = {
     productId: string
@@ -11,11 +13,16 @@ export type CheckoutLine = {
 export type CheckoutInput = {
     userId: string
     items: CheckoutLine[]
+    idempotencyKey?: string
 }
 
 export type CheckoutResult = {
     orderId: string
     total: number
+}
+
+export type CheckoutHooks = {
+    afterOutboxWrite?: () => Promise<void> | void
 }
 
 export type CheckoutFailure =
@@ -55,6 +62,7 @@ const validateLines = (items: CheckoutLine[]): CheckoutLine[] => {
 export const checkout = async (
     dataSource: DataSource,
     input: CheckoutInput,
+    hooks: CheckoutHooks = {},
 ): Promise<CheckoutResult> => {
     const { userId } = input
     const lines = validateLines(input.items)
@@ -67,7 +75,7 @@ export const checkout = async (
                 `UPDATE products
                  SET stock = stock - $1
                  WHERE id = $2 AND stock >= $1
-                 RETURNING price`,
+                     RETURNING price`,
                 [line.quantity, line.productId],
             )
 
@@ -94,7 +102,7 @@ export const checkout = async (
             `UPDATE users
              SET balance = balance - $1
              WHERE id = $2 AND balance >= $1
-             RETURNING balance`,
+                 RETURNING balance`,
             [total, userId],
         )
 
@@ -108,7 +116,12 @@ export const checkout = async (
         }
 
         const order = await manager.save(
-            manager.create(Order, { userId, status: 'paid', total }),
+            manager.create(Order, {
+                userId,
+                status: 'paid',
+                total,
+                idempotencyKey: input.idempotencyKey ?? null,
+            }),
         )
 
         await manager.insert(
@@ -127,6 +140,23 @@ export const checkout = async (
                 payload: { orderId: order.id },
             }),
         )
+
+        const event = toOrderPlacedEvent({
+            id: order.id,
+            userId,
+            total,
+            createdAt: order.createdAt,
+            items: priced,
+        })
+
+        await manager.insert(Outbox, {
+            aggregateType: ORDER_AGGREGATE_TYPE,
+            aggregateId: order.id,
+            type: event.type,
+            payload: event,
+        })
+
+        await hooks.afterOutboxWrite?.()
 
         return { orderId: order.id, total }
     })

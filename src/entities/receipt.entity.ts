@@ -3,6 +3,7 @@ import {
     Column,
     CreateDateColumn,
     Entity,
+    Index,
     JoinColumn,
     ManyToOne,
     PrimaryGeneratedColumn,
@@ -11,6 +12,7 @@ import { Order } from './order.entity'
 
 @Entity({ name: 'receipts' })
 @Check('receipts_total_check', 'total >= 0')
+@Index('receipts_order_id_key', ['orderId'], { unique: true })
 export class Receipt {
     @PrimaryGeneratedColumn('identity', {
         type: 'bigint',

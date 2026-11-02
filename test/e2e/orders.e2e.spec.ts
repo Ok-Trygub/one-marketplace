@@ -2,9 +2,13 @@ import { Test } from '@nestjs/testing'
 import type { INestApplication } from '@nestjs/common'
 import request from 'supertest'
 import { connectBroker } from '../../src/messaging/broker'
+import { OrderPlacedPublisher } from '../../src/messaging/order-placed.publisher'
+import { relayBatch } from '../../src/messaging/outbox-relay'
 import { ORDER_PLACED_QUEUE, assertTopology } from '../../src/messaging/topology'
 import { AppModule } from '../../src/app.module'
 import { configureApp } from '../../src/http/configure-app'
+import { Order } from '../../src/entities/order.entity'
+import { Outbox } from '../../src/entities/outbox.entity'
 import { startTestDatabase } from '../integration/testkit/database'
 import { startTestBroker } from '../integration/testkit/broker'
 import type { TestBroker } from '../integration/testkit/broker'
@@ -87,7 +91,45 @@ describe('orders (e2e)', () => {
         expect(replay.body.id).toBe(created.body.id)
     })
 
-    it('should publish order.placed when an order is created', async () => {
+    it('should create one order for two concurrent requests with the same Idempotency-Key', async () => {
+        const buyer = await insertUser(database.dataSource)
+        const product = await insertProduct(database.dataSource)
+
+        const send = () =>
+            request(app.getHttpServer())
+                .post('/orders')
+                .set('Idempotency-Key', 'e2e-concurrent')
+                .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 1 }] })
+
+        const [first, second] = await Promise.all([send(), send()])
+
+        expect(first.status).toBe(201)
+        expect(second.status).toBe(201)
+        expect(second.body.id).toBe(first.body.id)
+        expect(await database.dataSource.getRepository(Order).count()).toBe(1)
+        expect(await database.dataSource.getRepository(Outbox).count()).toBe(1)
+    })
+
+    it('should return 422 when the Idempotency-Key is reused with a different body', async () => {
+        const buyer = await insertUser(database.dataSource)
+        const product = await insertProduct(database.dataSource)
+
+        await request(app.getHttpServer())
+            .post('/orders')
+            .set('Idempotency-Key', 'e2e-reused-key')
+            .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 1 }] })
+            .expect(201)
+
+        const response = await request(app.getHttpServer())
+            .post('/orders')
+            .set('Idempotency-Key', 'e2e-reused-key')
+            .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 2 }] })
+            .expect(422)
+
+        expect(response.headers['content-type']).toContain('application/problem+json')
+    })
+
+    it('should put order.placed into the outbox and let the relay publish it under the outbox id', async () => {
         const connection = await connectBroker(broker.url)
         const channel = await connection.createChannel()
 
@@ -103,10 +145,17 @@ describe('orders (e2e)', () => {
             .send({ user_id: buyer.id, items: [{ product_id: product.id, quantity: 1 }] })
             .expect(201)
 
+        const [row] = await database.dataSource.getRepository(Outbox).find()
+
+        expect(row).toMatchObject({ aggregateId: created.body.id, type: 'order.placed', publishedAt: null })
+        expect((await channel.checkQueue(ORDER_PLACED_QUEUE)).messageCount).toBe(0)
+
+        await relayBatch(database.dataSource, app.get(OrderPlacedPublisher))
+
         const message = await channel.get(ORDER_PLACED_QUEUE, { noAck: true })
 
         expect(message).not.toBe(false)
-        expect((message || undefined)?.properties.messageId).toBe(`order.placed:${created.body.id}`)
+        expect((message || undefined)?.properties.messageId).toBe(row.id)
         expect(JSON.parse(String((message || undefined)?.content))).toMatchObject({
             eventId: `order.placed:${created.body.id}`,
             type: 'order.placed',

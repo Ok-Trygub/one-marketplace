@@ -13,15 +13,16 @@ import {
     Query,
     Res,
     UnauthorizedException,
+    UnprocessableEntityException,
 } from '@nestjs/common'
 import type { Response } from 'express'
 import { OrdersRepository } from '../repositories/orders.repository'
 import { CheckoutError } from '../services/checkout.service'
-import { handleIdempotency } from '../services/idempotency.service'
 import { OrderEventsService } from '../services/order-events.service'
 import type { OrderStatusEvent } from '../services/order-events.service'
 import { OrderStatusError, OrderStatusService } from '../services/order-status.service'
-import { PlaceOrderService } from '../services/place-order.service'
+import { IdempotencyKeyReusedError, PlaceOrderService } from '../services/place-order.service'
+import type { PlacedOrder } from '../services/place-order.service'
 import type { OrderStatus } from '../services/order-status.service'
 import type { Order } from '../entities/order.entity'
 
@@ -64,7 +65,11 @@ export const toOrderResponse = (order: Order): OrderResponse => ({
 
 const isId = (value: string): boolean => /^\d+$/.test(value)
 
-const translateCheckoutError = (error: unknown): never => {
+const translatePlaceOrderError = (error: unknown): never => {
+    if (error instanceof IdempotencyKeyReusedError) {
+        throw new UnprocessableEntityException(error.message)
+    }
+
     if (error instanceof CheckoutError) {
         if (error.reason === 'PRODUCT_NOT_FOUND' || error.reason === 'USER_NOT_FOUND') {
             throw new NotFoundException(error.message)
@@ -129,23 +134,22 @@ export class OrdersController {
             throw new NotFoundException(`Product '${unknownProduct.product_id}' was not found`)
         }
 
-        const result = await handleIdempotency(idempotencyKey, body, () =>
-            this.placeOrder
-                .place({
-                    userId: body.user_id,
-                    items: body.items.map((item) => ({
-                        productId: item.product_id,
-                        quantity: item.quantity,
-                    })),
-                })
-                .then(toOrderResponse, translateCheckoutError),
-        )
+        const placed: PlacedOrder = await this.placeOrder
+            .place({
+                userId: body.user_id,
+                items: body.items.map((item) => ({
+                    productId: item.product_id,
+                    quantity: item.quantity,
+                })),
+                idempotencyKey,
+            })
+            .catch(translatePlaceOrderError)
 
-        if (result.replay) {
+        if (placed.replay) {
             response.set('Idempotency-Replay', 'true')
         }
 
-        return result.response
+        return toOrderResponse(placed.order)
     }
 
     @Get(':id')
