@@ -1,8 +1,11 @@
 import type { DataSource } from 'typeorm'
+import { UnroutableEventError } from './order-placed.publisher'
 import type { OrderPlacedPublisher } from './order-placed.publisher'
 import type { OrderPlacedEvent } from './order-placed.event'
 
 export const RELAY_BATCH_SIZE = 100
+
+export const RELAY_MAX_ATTEMPTS = 10
 
 export type OutboxRow = {
     id: string
@@ -17,36 +20,47 @@ export type RelayOptions = {
     afterPublish?: (row: OutboxRow) => Promise<void> | void
 }
 
-export const relayBatch = (
+type RelayOutcome = 'published' | 'failed' | 'empty'
+
+export const relayBatch = async (
     dataSource: DataSource,
     publisher: OrderPlacedPublisher,
     options: RelayOptions = {},
 ): Promise<number> => {
     const { limit = RELAY_BATCH_SIZE, afterPublish } = options
+    const failed: string[] = []
+    let published = 0
 
-    return dataSource.transaction(async (manager) => {
-        const rows = await manager.query<OutboxRow[]>(
-            `SELECT id, aggregate_type, aggregate_id, type, payload
-             FROM outbox
-             WHERE published_at IS NULL
-             ORDER BY created_at, id
-             FOR UPDATE SKIP LOCKED
-             LIMIT $1`,
-            [limit],
-        )
+    for (let index = 0; index < limit; index += 1) {
+        const outcome = await dataSource.transaction(async (manager): Promise<RelayOutcome> => {
+            const [row] = await manager.query<OutboxRow[]>(
+                `SELECT id, aggregate_type, aggregate_id, type, payload
+                 FROM outbox
+                 WHERE published_at IS NULL
+                   AND attempts < $1
+                   AND id <> ALL($2::uuid[])
+                 ORDER BY created_at, id
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1`,
+                [RELAY_MAX_ATTEMPTS, failed],
+            )
 
-        let published = 0
+            if (!row) {
+                return 'empty'
+            }
 
-        for (const row of rows) {
             try {
                 await publisher.publish(row.payload, row.id)
             } catch (error) {
-                const message = error instanceof Error ? error.message : String(error)
+                if (!(error instanceof UnroutableEventError)) {
+                    throw error
+                }
 
                 await manager.query(`UPDATE outbox SET attempts = attempts + 1 WHERE id = $1`, [row.id])
-                console.warn(`relay: outbox ${row.id} was not published: ${message}`)
+                console.warn(`relay: outbox ${row.id} was not published: ${error.message}`)
+                failed.push(row.id)
 
-                break
+                return 'failed'
             }
 
             await afterPublish?.(row)
@@ -56,9 +70,17 @@ export const relayBatch = (
                 [row.id],
             )
 
-            published += 1
+            return 'published'
+        })
+
+        if (outcome === 'empty') {
+            break
         }
 
-        return published
-    })
+        if (outcome === 'published') {
+            published += 1
+        }
+    }
+
+    return published
 }
