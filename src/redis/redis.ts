@@ -17,7 +17,10 @@ export const connectCache = (url: string = env('REDIS_URL')): Redis =>
     new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 1 })
 
 export const connectState = (url: string = env('REDIS_QUEUE_URL')): Redis =>
-    new Redis(url, { lazyConnect: true })
+    new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 1 })
 
 export const connectQueue = (url: string = env('REDIS_QUEUE_URL')): Redis =>
     new Redis(url, { maxRetriesPerRequest: null })
+
+export const connectQueueProducer = (url: string = env('REDIS_QUEUE_URL')): Redis =>
+    new Redis(url, { maxRetriesPerRequest: 1, enableOfflineQueue: false })

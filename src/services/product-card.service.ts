@@ -20,9 +20,18 @@ export const productCardLockKey = (id: string): string => `lock:product-card:${i
 
 export const productCardTtl = (): number => 300 + Math.floor(Math.random() * 61)
 
-const LOCK_TTL_MS = 5000
+const LOCK_TTL_MS = 10_000
+
+const LOCK_WAIT_BUDGET_MS = 5_000
 
 const LOCK_POLL_MS = 25
+
+export class ProductCardBusyError extends Error {
+    constructor(id: string) {
+        super(`product card ${id} is still being loaded`)
+        this.name = 'ProductCardBusyError'
+    }
+}
 
 @Injectable()
 export class ProductCardService {
@@ -37,7 +46,7 @@ export class ProductCardService {
 
     private async load(id: string): Promise<ProductCard | null> {
         const lockKey = productCardLockKey(id)
-        const deadline = Date.now() + LOCK_TTL_MS
+        const deadline = Date.now() + LOCK_WAIT_BUDGET_MS
 
         while (Date.now() < deadline) {
             const token = await acquireLock(this.redis, lockKey, LOCK_TTL_MS).catch(() => undefined)
@@ -63,7 +72,7 @@ export class ProductCardService {
             }
         }
 
-        return this.fetch(id)
+        throw new ProductCardBusyError(id)
     }
 
     private async readCard(id: string): Promise<ProductCard | null> {

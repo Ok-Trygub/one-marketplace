@@ -54,8 +54,10 @@ export class RateLimiterService {
                 allowed: allowed === 1,
                 retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
             }
-        } catch {
-            return { allowed: true, retryAfterSeconds: 0 }
+        } catch (error) {
+            console.warn(`rate limit: redis is unavailable, request refused: ${error instanceof Error ? error.message : error}`)
+
+            return { allowed: false, retryAfterSeconds: 1 }
         }
     }
 }

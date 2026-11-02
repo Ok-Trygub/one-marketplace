@@ -3,6 +3,8 @@ import { AppConfigModule } from './config/config.module'
 import { DatabaseModule } from './database/database.module'
 import { MessagingModule } from './messaging/messaging.module'
 import { RedisModule } from './redis/redis.module'
+import { ProductCardsQueueModule } from './queue/product-cards-queue.module'
+import { ProductCardRefresher } from './queue/product-card-refresher'
 import { HealthController } from './controllers/health.controller'
 import { ProductsController } from './controllers/products.controller'
 import { OrdersController } from './controllers/orders.controller'
@@ -19,7 +21,7 @@ import { RateLimiterService } from './services/rate-limiter.service'
 import { OrdersGateway } from './gateways/orders.gateway'
 
 @Module({
-    imports: [AppConfigModule, DatabaseModule, MessagingModule, RedisModule],
+    imports: [AppConfigModule, DatabaseModule, MessagingModule, RedisModule, ProductCardsQueueModule],
     controllers: [HealthController, ProductsController, OrdersController, SessionsController],
     providers: [
         ProductsRepository,
@@ -31,6 +33,7 @@ import { OrdersGateway } from './gateways/orders.gateway'
         ProductCardService,
         SessionService,
         RateLimiterService,
+        ProductCardRefresher,
         OrdersGateway,
     ],
 })

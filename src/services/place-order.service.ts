@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
 import { QueryFailedError } from 'typeorm'
 import { OrdersRepository } from '../repositories/orders.repository'
+import { ProductCardRefresher } from '../queue/product-card-refresher'
 import type { CheckoutInput, CheckoutLine } from './checkout.service'
 import type { Order } from '../entities/order.entity'
 
@@ -41,7 +42,10 @@ const isSameRequest = (order: Order, input: CheckoutInput): boolean => {
 
 @Injectable()
 export class PlaceOrderService {
-    constructor(private readonly orders: OrdersRepository) {}
+    constructor(
+        private readonly orders: OrdersRepository,
+        @Optional() private readonly refresher?: ProductCardRefresher,
+    ) {}
 
     async place(input: CheckoutInput): Promise<PlacedOrder> {
         const existing = await this.findExisting(input)
@@ -51,7 +55,14 @@ export class PlaceOrderService {
         }
 
         try {
-            return { order: await this.orders.create(input), replay: false }
+            const order = await this.orders.create(input)
+
+            await this.refresher?.refreshProducts(
+                order.items.map((item) => item.productId),
+                `order-${order.id}-placed`,
+            )
+
+            return { order, replay: false }
         } catch (error) {
             if (!isIdempotencyConflict(error)) {
                 throw error

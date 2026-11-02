@@ -131,7 +131,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '429':
-          description: The client exceeded the rate limit
+          description: The client exceeded the rate limit, or the rate limit store is unavailable
+          headers:
+            Retry-After:
+              description: Number of seconds after which the request may be retried.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The product card is still being loaded by another request
           headers:
             Retry-After:
               description: Number of seconds after which the request may be retried.

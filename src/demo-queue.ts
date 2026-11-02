@@ -18,7 +18,7 @@ import {
 import type { RefreshJobData } from './queue/product-cards.queue'
 
 const DEMO_QUEUE = 'demo-product-cards'
-const DEMO_ORDER_ID = 'demo'
+const DEMO_EVENT_KEY = 'order-demo-placed'
 const FAIL_TIMES = 2
 const SCHEDULE_EVERY_MS = 500
 const MIN_SCHEDULED_RUNS = 2
@@ -44,8 +44,8 @@ const main = async (): Promise<number> => {
         const productId = product?.id ?? '1'
 
         const jobs = [
-            await enqueueRefresh(queue, productId, DEMO_ORDER_ID),
-            await enqueueRefresh(queue, productId, DEMO_ORDER_ID),
+            await enqueueRefresh(queue, productId, DEMO_EVENT_KEY),
+            await enqueueRefresh(queue, productId, DEMO_EVENT_KEY),
         ]
         const queued = await queue.count()
 

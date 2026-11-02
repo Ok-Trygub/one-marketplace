@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
 import { DataSource } from 'typeorm'
 import { Order } from '../entities/order.entity'
 import { OrderEventsService } from './order-events.service'
+import { ProductCardRefresher } from '../queue/product-card-refresher'
 import type { OrderStatusEvent } from './order-events.service'
 
 export type OrderStatus = 'pending' | 'paid' | 'cancelled'
@@ -29,6 +30,7 @@ export class OrderStatusService {
     constructor(
         private readonly dataSource: DataSource,
         private readonly events: OrderEventsService,
+        @Optional() private readonly refresher?: ProductCardRefresher,
     ) {}
 
     async change(orderId: string, status: OrderStatus): Promise<OrderStatusEvent> {
@@ -41,7 +43,11 @@ export class OrderStatusService {
             .execute()
 
         if (result.affected === 1) {
-            return this.events.publish(orderId, status)
+            const event = this.events.publish(orderId, status)
+
+            await this.refresher?.refreshOrder(orderId, `order-${orderId}-${status}-${Date.parse(event.changedAt)}`)
+
+            return event
         }
 
         const order = await this.dataSource.getRepository(Order).findOne({

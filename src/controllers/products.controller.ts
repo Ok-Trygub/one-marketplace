@@ -1,7 +1,19 @@
-import { Body, Controller, Get, Headers, HttpCode, NotFoundException, Param, Post, Res, UseGuards } from '@nestjs/common'
+import {
+    Body,
+    Controller,
+    Get,
+    Headers,
+    HttpCode,
+    NotFoundException,
+    Param,
+    Post,
+    Res,
+    ServiceUnavailableException,
+    UseGuards,
+} from '@nestjs/common'
 import type { Response } from 'express'
 import { ProductsRepository } from '../repositories/products.repository'
-import { ProductCardService } from '../services/product-card.service'
+import { ProductCardBusyError, ProductCardService } from '../services/product-card.service'
 import type { ProductCard } from '../services/product-card.service'
 import { handleIdempotency } from '../services/idempotency.service'
 import { RateLimitGuard } from '../http/rate-limit.guard'
@@ -46,8 +58,21 @@ export class ProductsController {
 
     @Get(':id')
     @UseGuards(RateLimitGuard)
-    async getById(@Param('id') id: string): Promise<ProductCard> {
-        const card = isId(id) ? await this.productCards.get(id) : null
+    async getById(
+        @Param('id') id: string,
+        @Res({ passthrough: true }) response: Response,
+    ): Promise<ProductCard> {
+        const card = isId(id)
+            ? await this.productCards.get(id).catch((error: unknown) => {
+                  if (!(error instanceof ProductCardBusyError)) {
+                      throw error
+                  }
+
+                  response.set('Retry-After', '1')
+
+                  throw new ServiceUnavailableException(error.message)
+              })
+            : null
 
         if (!card) {
             throw new NotFoundException(`Product '${id}' was not found`)

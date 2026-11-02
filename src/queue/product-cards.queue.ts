@@ -6,6 +6,7 @@ import { productCardKey } from '../services/product-card.service'
 import type { ProductCardService } from '../services/product-card.service'
 
 export const PRODUCT_CARDS_QUEUE = 'product-cards'
+export const PRODUCT_CARDS_QUEUE_TOKEN = 'PRODUCT_CARDS_QUEUE'
 export const REFRESH_JOB = 'refresh'
 export const REFRESH_ALL_JOB = 'refresh-all'
 export const REFRESH_ALL_SCHEDULER = 'product-cards-refresh-all'
@@ -34,9 +35,9 @@ export const createProductCardsWorker = (
 export const enqueueRefresh = (
     queue: Queue<RefreshJobData>,
     productId: string,
-    orderId: string,
+    eventKey: string,
 ): Promise<Job<RefreshJobData>> =>
-    queue.add(REFRESH_JOB, { productId }, { jobId: `refresh-${productId}-order-${orderId}` })
+    queue.add(REFRESH_JOB, { productId }, { jobId: `refresh-${productId}-${eventKey}` })
 
 export const upsertRefreshAllScheduler = (queue: Queue<RefreshJobData>, everyMs: number): Promise<Job<RefreshJobData>> =>
     queue.upsertJobScheduler(REFRESH_ALL_SCHEDULER, { every: everyMs }, { name: REFRESH_ALL_JOB, data: {} })
