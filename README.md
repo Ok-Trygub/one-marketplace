@@ -512,7 +512,9 @@ The checkout transaction writes the order and the `outbox` row in one `COMMIT`. 
 
 **Why publish and `UPDATE published_at` cannot swap.** If the row is marked first and the process dies before the publish, the row is marked as published but the broker never got it, nothing retries it, and the event is lost. In the order publish then `UPDATE` the same crash leaves the row unmarked and the next pass publishes it again. The choice is between a duplicate and a loss: the idempotent consumer removes the duplicate, nothing repairs the loss.
 
-**Outbox cleanup.** A periodic job deletes rows with `published_at` older than 7 days in batches; unpublished rows are never deleted.
+**Outbox cleanup.** `npm run relay` calls `cleanupOutbox` once an hour: it deletes rows with `published_at` older than 7 days in batches of 1000; unpublished rows are never deleted.
+
+**Relay failures.** Each row is published and marked in its own transaction, so a crash keeps the rows already marked. A row the broker returns as unroutable gets `attempts + 1` and is skipped until the next pass, so it does not block the rows behind it; after 10 attempts the relay stops picking it up until `attempts` is reset. Any other publish error is a broker failure: the relay stops without spending an attempt.
 
 ## Grading
 

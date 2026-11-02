@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { Channel, ChannelModel } from 'amqplib'
 import { connectBroker } from '../../src/messaging/broker'
-import { OrderPlacedPublisher } from '../../src/messaging/order-placed.publisher'
+import { OrderPlacedPublisher, UnroutableEventError } from '../../src/messaging/order-placed.publisher'
 import { toOrderPlacedEvent } from '../../src/messaging/order-placed.event'
 import { RECEIPTS_CONSUMER, startConsumer } from '../../src/messaging/order-placed.consumer'
 import type { RunningConsumer } from '../../src/messaging/order-placed.consumer'
-import { relayBatch } from '../../src/messaging/outbox-relay'
+import { RELAY_MAX_ATTEMPTS, relayBatch } from '../../src/messaging/outbox-relay'
+import { cleanupOutbox } from '../../src/messaging/outbox-cleanup'
 import { checkout } from '../../src/services/checkout.service'
 import { IdempotencyKeyReusedError, PlaceOrderService } from '../../src/services/place-order.service'
 import { OrdersRepository } from '../../src/repositories/orders.repository'
@@ -172,6 +173,103 @@ describe('order.placed messaging', () => {
         expect(consumer.stats).toMatchObject({ delivered: 2, effect: 1, skipped: 1, alreadyApplied: 0 })
         expect(await receipts()).toHaveLength(1)
         expect(await processedMessages()).toHaveLength(1)
+    })
+
+    it('should skip a row that fails to publish and publish the rows after it', async () => {
+        await placeOrder()
+        await placeOrder()
+
+        const [poison, healthy] = await outboxRows()
+        const publisher = await openPublisher()
+        const publish = publisher.publish.bind(publisher)
+
+        publisher.publish = (event, messageId) =>
+            messageId === poison.id ? Promise.reject(new UnroutableEventError(messageId)) : publish(event, messageId)
+
+        expect(await relayBatch(database.dataSource, publisher)).toBe(1)
+
+        const [poisonAfter, healthyAfter] = await outboxRows()
+
+        expect(poisonAfter).toMatchObject({ id: poison.id, publishedAt: null, attempts: 1 })
+        expect(healthyAfter.id).toBe(healthy.id)
+        expect(healthyAfter.publishedAt).not.toBeNull()
+        expect((await channel.checkQueue(ORDER_PLACED_QUEUE)).messageCount).toBe(1)
+    })
+
+    it('should not spend an attempt when the broker itself fails', async () => {
+        await placeOrder()
+
+        const publisher = await openPublisher()
+
+        publisher.publish = () => Promise.reject(new Error('channel closed'))
+
+        await expect(relayBatch(database.dataSource, publisher)).rejects.toThrow('channel closed')
+
+        const [row] = await outboxRows()
+
+        expect(row).toMatchObject({ publishedAt: null, attempts: 0 })
+    })
+
+    it('should stop retrying a row after the maximum number of attempts', async () => {
+        await placeOrder()
+        await placeOrder()
+
+        const [exhausted] = await outboxRows()
+
+        await database.dataSource.getRepository(Outbox).update({ id: exhausted.id }, { attempts: RELAY_MAX_ATTEMPTS })
+
+        expect(await relayBatch(database.dataSource, await openPublisher())).toBe(1)
+
+        const [exhaustedAfter] = await outboxRows()
+
+        expect(exhaustedAfter).toMatchObject({ publishedAt: null, attempts: RELAY_MAX_ATTEMPTS })
+    })
+
+    it('should keep the rows already published when the relay dies in the middle of a batch', async () => {
+        await placeOrder()
+        await placeOrder()
+        await placeOrder()
+
+        const [first, second, third] = await outboxRows()
+
+        await expect(
+            relayBatch(database.dataSource, await openPublisher(), {
+                afterPublish: (row) => {
+                    if (row.id === second.id) {
+                        crash()
+                    }
+                },
+            }),
+        ).rejects.toThrow(CRASH_MESSAGE)
+
+        const [firstAfter, secondAfter, thirdAfter] = await outboxRows()
+
+        expect(firstAfter.id).toBe(first.id)
+        expect(firstAfter.publishedAt).not.toBeNull()
+        expect(secondAfter.publishedAt).toBeNull()
+        expect(thirdAfter.id).toBe(third.id)
+        expect(thirdAfter.publishedAt).toBeNull()
+    })
+
+    it('should delete only published rows older than the retention period', async () => {
+        await placeOrder()
+        await placeOrder()
+        await placeOrder()
+
+        const [old, recent, unpublished] = await outboxRows()
+
+        await database.dataSource.query(
+            `UPDATE outbox SET published_at = now() - interval '8 days' WHERE id = $1`,
+            [old.id],
+        )
+        await database.dataSource.query(`UPDATE outbox SET published_at = now() WHERE id = $1`, [recent.id])
+        await database.dataSource.query(
+            `UPDATE outbox SET created_at = now() - interval '30 days' WHERE id = $1`,
+            [unpublished.id],
+        )
+
+        expect(await cleanupOutbox(database.dataSource)).toBe(1)
+        expect((await outboxRows()).map((row) => row.id).sort()).toEqual([recent.id, unpublished.id].sort())
     })
 
     it('should create one order and one outbox row for two concurrent requests with the same idempotency key', async () => {
