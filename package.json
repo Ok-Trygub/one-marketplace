@@ -35,6 +35,7 @@
     "demo:retry": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-retry.js",
     "consume": "bash scripts/with-secrets.sh dev node dist/src/consumer.js",
     "relay": "bash scripts/with-secrets.sh dev node dist/src/relay.js",
+    "edge": "bash scripts/with-secrets.sh dev node dist/src/edge.js",
     "demo:publish": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-publish.js",
     "demo:dlq": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-dlq.js",
     "demo:duplicate": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-duplicate.js",
@@ -52,6 +53,9 @@
     "demo:auth": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-auth.js",
     "demo:reuse": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-reuse.js",
     "demo:rbac": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-rbac.js",
+    "demo:upload": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-upload.js",
+    "demo:multipart": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-multipart.js",
+    "demo:cdn": "bash scripts/with-secrets.sh dev node dist/src/demo/demo-cdn.js",
     "worker": "bash scripts/with-secrets.sh dev node dist/src/worker.js",
     "start:vault": "bash scripts/with-secrets.sh dev npm run start"
   },
@@ -72,6 +76,8 @@
     "typescript": "~6.0.3"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1155.0",
+    "@aws-sdk/s3-request-presigner": "^3.1155.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.0",
     "@nestjs/core": "^12.0.1",
