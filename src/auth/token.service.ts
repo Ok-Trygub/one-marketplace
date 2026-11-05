@@ -1,10 +1,12 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto'
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtService } from '@nestjs/jwt'
 import type { Env } from '../config/env.schema'
 import type { UserRole } from '../entities/user.entity'
 import { ACCESS_TOKEN_TTL_SECONDS } from './auth.constants'
+import { JWT_VERIFICATION_KEYS } from './verification-keys'
+import type { VerificationKeys } from './verification-keys'
 
 export type AccessClaims = {
     sub: string
@@ -32,6 +34,7 @@ export class TokenService {
     constructor(
         private readonly jwt: JwtService,
         config: ConfigService<Env, true>,
+        @Inject(JWT_VERIFICATION_KEYS) private readonly verificationKeys: VerificationKeys,
     ) {
         this.pepper = config.get('REFRESH_TOKEN_PEPPER', { infer: true })
     }
@@ -45,8 +48,15 @@ export class TokenService {
         return { accessToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS }
     }
 
-    verifyAccess(token: string): Promise<AccessClaims> {
-        return this.jwt.verifyAsync<AccessClaims>(token)
+    async verifyAccess(token: string): Promise<AccessClaims> {
+        const kid = this.jwt.decode<{ header?: { kid?: unknown } } | null>(token, { complete: true })?.header?.kid
+        const publicKey = typeof kid === 'string' ? this.verificationKeys.get(kid) : undefined
+
+        if (!publicKey) {
+            throw new Error(`Access token is signed with an unknown key '${String(kid)}'`)
+        }
+
+        return this.jwt.verifyAsync<AccessClaims>(token, { publicKey })
     }
 
     issueRefresh(): IssuedRefreshToken {

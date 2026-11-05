@@ -47,6 +47,15 @@ export const envSchema = z.object({
 
     JWT_KID: z.string().min(1),
 
+    JWT_PREVIOUS_KID: z.string().min(1).optional(),
+
+    JWT_PREVIOUS_PUBLIC_KEY: z
+        .string()
+        .refine(isP256Key(createPublicKey), {
+            message: 'must be a base64-encoded PEM public key on the P-256 curve',
+        })
+        .optional(),
+
     REFRESH_TOKEN_PEPPER: z.string().min(32),
 
     LOG_LEVEL: z
@@ -58,6 +67,22 @@ export const envSchema = z.object({
         .int()
         .positive()
         .default(5000),
+}).superRefine((env, context) => {
+    if (Boolean(env.JWT_PREVIOUS_KID) !== Boolean(env.JWT_PREVIOUS_PUBLIC_KEY)) {
+        context.addIssue({
+            code: 'custom',
+            path: [env.JWT_PREVIOUS_KID ? 'JWT_PREVIOUS_PUBLIC_KEY' : 'JWT_PREVIOUS_KID'],
+            message: 'JWT_PREVIOUS_KID and JWT_PREVIOUS_PUBLIC_KEY are set together or not at all',
+        })
+    }
+
+    if (env.JWT_PREVIOUS_KID && env.JWT_PREVIOUS_KID === env.JWT_KID) {
+        context.addIssue({
+            code: 'custom',
+            path: ['JWT_PREVIOUS_KID'],
+            message: 'must differ from JWT_KID',
+        })
+    }
 })
 
 export type Env = z.infer<typeof envSchema>

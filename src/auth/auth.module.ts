@@ -1,4 +1,4 @@
-import { createPrivateKey, createPublicKey } from 'node:crypto'
+import { createPrivateKey } from 'node:crypto'
 import { Module } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { JwtModule } from '@nestjs/jwt'
@@ -7,6 +7,7 @@ import { DatabaseModule } from '../database/database.module'
 import { RedisModule } from '../redis/redis.module'
 import { AccessAuthenticator } from './access-authenticator'
 import { AccessDenylist } from './access-denylist'
+import { AuthMaintenance } from './auth-maintenance'
 import {
     ACCESS_TOKEN_TTL_SECONDS,
     JWT_ALGORITHM,
@@ -17,8 +18,7 @@ import { AuthGuard } from './auth.guard'
 import { AuthService } from './auth.service'
 import { RolesGuard } from './roles.guard'
 import { TokenService } from './token.service'
-
-const pem = (base64: string): string => Buffer.from(base64, 'base64').toString('utf8')
+import { JWT_VERIFICATION_KEYS, pemFromBase64, verificationKeysFromConfig } from './verification-keys'
 
 @Module({
     imports: [
@@ -27,8 +27,7 @@ const pem = (base64: string): string => Buffer.from(base64, 'base64').toString('
         JwtModule.registerAsync({
             inject: [ConfigService],
             useFactory: (config: ConfigService<Env, true>) => ({
-                privateKey: createPrivateKey(pem(config.get('JWT_PRIVATE_KEY', { infer: true }))),
-                publicKey: createPublicKey(pem(config.get('JWT_PUBLIC_KEY', { infer: true }))),
+                privateKey: createPrivateKey(pemFromBase64(config.get('JWT_PRIVATE_KEY', { infer: true }))),
                 signOptions: {
                     algorithm: JWT_ALGORITHM,
                     keyid: config.get('JWT_KID', { infer: true }),
@@ -44,7 +43,20 @@ const pem = (base64: string): string => Buffer.from(base64, 'base64').toString('
             }),
         }),
     ],
-    providers: [TokenService, AuthService, AccessDenylist, AccessAuthenticator, AuthGuard, RolesGuard],
+    providers: [
+        {
+            provide: JWT_VERIFICATION_KEYS,
+            inject: [ConfigService],
+            useFactory: verificationKeysFromConfig,
+        },
+        TokenService,
+        AuthService,
+        AccessDenylist,
+        AuthMaintenance,
+        AccessAuthenticator,
+        AuthGuard,
+        RolesGuard,
+    ],
     exports: [TokenService, AuthService, AccessDenylist, AccessAuthenticator, AuthGuard, RolesGuard],
 })
 export class AuthModule {}

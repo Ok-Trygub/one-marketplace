@@ -16,6 +16,8 @@ import {
     UseGuards,
 } from '@nestjs/common'
 import type { Response } from 'express'
+import { concatMap, takeWhile } from 'rxjs'
+import { AccessAuthenticator } from '../auth/access-authenticator'
 import { AuthGuard } from '../auth/auth.guard'
 import type { AuthenticatedUser } from '../auth/authenticated-user'
 import { CurrentUser } from '../auth/current-user.decorator'
@@ -113,6 +115,7 @@ export class OrdersController {
         private readonly orderStatus: OrderStatusService,
         private readonly events: OrderEventsService,
         private readonly placeOrder: PlaceOrderService,
+        private readonly authenticator: AccessAuthenticator,
     ) {}
 
     @Get()
@@ -215,12 +218,22 @@ export class OrdersController {
             }
         }
 
-        const subscription = this.events.streamFor(id).subscribe({
-            next: (event) => response.write(toSseBlock(event)),
-            complete: () => response.end(),
-        })
+        const subscription = this.events
+            .streamFor(id)
+            .pipe(
+                concatMap(async (event) => ({ event, allowed: await this.authenticator.isStillValid(user) })),
+                takeWhile(({ allowed }) => allowed),
+            )
+            .subscribe({
+                next: ({ event }) => response.write(toSseBlock(event)),
+                complete: () => response.end(),
+            })
+        const expiry = setTimeout(() => response.end(), Math.max(0, user.expiresAt * 1000 - Date.now()))
 
-        response.on('close', () => subscription.unsubscribe())
+        response.on('close', () => {
+            clearTimeout(expiry)
+            subscription.unsubscribe()
+        })
     }
 
     private async load(id: string): Promise<Order> {

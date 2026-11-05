@@ -4,6 +4,8 @@ import { User } from './user.entity'
 @Entity({ name: 'refresh_tokens' })
 @Index('refresh_tokens_token_hash_key', ['tokenHash'], { unique: true })
 @Index('refresh_tokens_family_id_idx', ['familyId'])
+@Index('refresh_tokens_expires_at_idx', ['expiresAt'])
+@Index('refresh_tokens_revoked_at_idx', ['revokedAt'], { where: '"revoked_at" IS NOT NULL' })
 export class RefreshToken {
     @PrimaryGeneratedColumn('uuid')
     id!: string

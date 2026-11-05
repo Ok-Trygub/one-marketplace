@@ -7,12 +7,14 @@ import {
 } from '@nestjs/websockets'
 import type { OnGatewayInit } from '@nestjs/websockets'
 import type { OnModuleDestroy } from '@nestjs/common'
+import { concatMap } from 'rxjs'
 import type { Subscription } from 'rxjs'
 import type { Server, Socket } from 'socket.io'
 import { AccessAuthenticator, AccessTokenRejectedError, RevocationCheckUnavailableError } from '../auth/access-authenticator'
 import type { AuthenticatedUser } from '../auth/authenticated-user'
 import { OrdersRepository } from '../repositories/orders.repository'
 import { OrderEventsService } from '../services/order-events.service'
+import type { OrderStatusEvent } from '../services/order-events.service'
 
 export type JoinFailure = 'UNAUTHORIZED' | 'UNAVAILABLE' | 'ORDER_NOT_FOUND' | 'FORBIDDEN'
 
@@ -40,9 +42,10 @@ export class OrdersGateway implements OnGatewayInit, OnModuleDestroy {
     ) {}
 
     afterInit(): void {
-        this.subscription = this.events.stream().subscribe((event) => {
-            this.server.to(orderRoom(event.orderId)).emit('order.status', event)
-        })
+        this.subscription = this.events
+            .stream()
+            .pipe(concatMap((event) => this.deliver(event)))
+            .subscribe()
     }
 
     onModuleDestroy(): void {
@@ -73,9 +76,33 @@ export class OrdersGateway implements OnGatewayInit, OnModuleDestroy {
 
         const room = orderRoom(orderId)
 
+        client.data.user = user
         await client.join(room)
 
         return { ok: true, room }
+    }
+
+    private async deliver(event: OrderStatusEvent): Promise<void> {
+        try {
+            const sockets = await this.server.in(orderRoom(event.orderId)).fetchSockets()
+
+            await Promise.all(
+                sockets.map(async (socket) => {
+                    const user = socket.data.user as AuthenticatedUser | undefined
+
+                    if (user && (await this.authenticator.isStillValid(user))) {
+                        socket.emit('order.status', event)
+                        return
+                    }
+
+                    socket.disconnect(true)
+                }),
+            )
+        } catch (error) {
+            console.warn(
+                `ws: order ${event.orderId} event ${event.id} was not delivered: ${error instanceof Error ? error.message : error}`,
+            )
+        }
     }
 
     private async authenticate(token: unknown): Promise<AuthenticatedUser | JoinFailure> {

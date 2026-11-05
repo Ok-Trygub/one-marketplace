@@ -136,7 +136,7 @@ export class AuthService {
 
             await this.denylist.revokeSession(outcome.familyId).catch((error: unknown) => {
                 console.warn(
-                    `auth: access tokens of family ${outcome.familyId} stay valid until they expire, denylist write failed: ${error instanceof Error ? error.message : error}`,
+                    `auth: denylist write for family ${outcome.familyId} failed, access tokens are refused until the revoked sessions sync restores it: ${error instanceof Error ? error.message : error}`,
                 )
             })
         }

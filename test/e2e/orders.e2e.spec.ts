@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { JwtService } from '@nestjs/jwt'
 import { Test } from '@nestjs/testing'
 import type { INestApplication } from '@nestjs/common'
 import request from 'supertest'
@@ -252,5 +254,15 @@ describe('orders (e2e)', () => {
             .expect(403)
 
         expect(foreign.headers['content-type']).toContain('application/problem+json')
+    })
+
+    it('should return 401 for a token whose kid is not among the verification keys', async () => {
+        const buyer = await insertUser(database.dataSource)
+        const token = await app
+            .get(JwtService)
+            .signAsync({ role: buyer.role, sid: randomUUID() }, { subject: buyer.id, jwtid: randomUUID(), keyid: 'retired-key' })
+
+        await request(app.getHttpServer()).get('/auth/me').set('Authorization', `Bearer ${token}`).expect(401)
+        await request(app.getHttpServer()).get('/auth/me').set('Authorization', await bearer(app, buyer)).expect(200)
     })
 })

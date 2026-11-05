@@ -39,6 +39,22 @@ export class AccessAuthenticator {
         }
     }
 
+    async isStillValid(user: AuthenticatedUser): Promise<boolean> {
+        if (user.expiresAt <= Math.floor(Date.now() / 1000)) {
+            return false
+        }
+
+        try {
+            return !(await this.denylist.isDenied(user.tokenId, user.sessionId))
+        } catch (error) {
+            console.warn(
+                `auth: denylist is unavailable, open stream closed: ${error instanceof Error ? error.message : error}`,
+            )
+
+            return false
+        }
+    }
+
     private async verify(token: string): Promise<AccessClaims> {
         try {
             return await this.tokens.verifyAccess(token)

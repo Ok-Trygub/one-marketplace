@@ -105,6 +105,40 @@ describe('order status realtime (e2e)', () => {
         return { contentType: response.headers.get('content-type'), text }
     }
 
+    const readUntilClosed = async (order: OwnedOrder): Promise<{ text: string; closed: boolean }> => {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 3000)
+        const response = await fetch(`${baseUrl}/orders/${order.id}/events`, {
+            headers: { Authorization: order.authorization },
+            signal: controller.signal,
+        })
+        const reader = response.body!.getReader()
+        const decoder = new TextDecoder()
+        let text = ''
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read()
+
+                if (done) {
+                    return { text, closed: true }
+                }
+
+                text += decoder.decode(value, { stream: true })
+            }
+        } catch {
+            return { text, closed: false }
+        } finally {
+            clearTimeout(timer)
+        }
+    }
+
+    const logout = (authorization: string): request.Test => {
+        return request(baseUrl).post('/auth/logout').set('Authorization', authorization)
+    }
+
+    const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
     const eventIds = (text: string): number[] => {
         return (text.match(/^id: \d+$/gm) ?? []).map((line) => Number(line.slice(4)))
     }
@@ -274,5 +308,38 @@ describe('order status realtime (e2e)', () => {
             .expect(404)
 
         expect(response.headers['content-type']).toContain('application/problem+json')
+    })
+
+    it('should close the event stream after logout instead of sending the next event', async () => {
+        const order = await createOrder()
+        const stream = readUntilClosed(order)
+
+        await pause(300)
+        await changeStatus(order.id, 'pending').expect(200)
+        await pause(200)
+        await logout(order.authorization).expect(204)
+        await changeStatus(order.id, 'paid').expect(200)
+
+        const { text, closed } = await stream
+
+        expect(closed).toBe(true)
+        expect(eventIds(text)).toEqual([1])
+    })
+
+    it('should disconnect the socket after logout instead of delivering the next event', async () => {
+        const order = await createOrder()
+        const client = await connect(order.authorization)
+        const events = collectEvents(client)
+        const disconnected = new Promise<string>((resolve) => client.once('disconnect', resolve))
+
+        expect(await join(client, order.id)).toEqual({ ok: true, room: `orders:${order.id}` })
+
+        await changeStatus(order.id, 'pending').expect(200)
+        await pause(200)
+        await logout(order.authorization).expect(204)
+        await changeStatus(order.id, 'paid').expect(200)
+
+        expect(await disconnected).toBe('io server disconnect')
+        expect(events.map((event) => event.status)).toEqual(['pending'])
     })
 })
