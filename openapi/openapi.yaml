@@ -54,6 +54,8 @@ paths:
     post:
       operationId: createProduct
       summary: Create a product
+      security:
+        - bearerAuth: [ ]
       parameters:
         - name: Idempotency-Key
           in: header
@@ -85,6 +87,18 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Only a seller or an admin can create products
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '422':
           description: Idempotency key was reused with a different request body
           content:
@@ -93,6 +107,12 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '500':
           description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
           content:
             application/problem+json:
               schema:
@@ -163,7 +183,9 @@ paths:
   /orders:
     get:
       operationId: listOrders
-      summary: List orders
+      summary: List orders of the authenticated buyer
+      security:
+        - bearerAuth: [ ]
 
       parameters:
         - name: limit
@@ -197,15 +219,29 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '500':
           description: Unexpected server error
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
     post:
       operationId: createOrder
-      summary: Create an order
+      summary: Create an order for the authenticated buyer
+      security:
+        - bearerAuth: [ ]
 
       parameters:
         - name: Idempotency-Key
@@ -240,9 +276,15 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
         '404':
-          description: Product or buyer not found
+          description: Product not found
           content:
             application/problem+json:
               schema:
@@ -267,10 +309,18 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /orders/{id}:
     get:
       operationId: getOrder
-      summary: Get an order by ID
+      summary: Get an order of the authenticated buyer by ID
+      security:
+        - bearerAuth: [ ]
 
       parameters:
         - name: id
@@ -287,6 +337,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The order belongs to another buyer
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 
         '404':
           description: Order not found
@@ -300,10 +362,18 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /orders/{id}/status:
     patch:
       operationId: changeOrderStatus
-      summary: Change the status of an order
+      summary: Change the status of an order, seller or admin only
+      security:
+        - bearerAuth: [ ]
 
       parameters:
         - name: id
@@ -333,6 +403,18 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Only a seller or an admin can change the order status
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '404':
           description: Order not found
           content:
@@ -351,22 +433,24 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /orders/{id}/events:
     get:
       operationId: streamOrderEvents
       summary: Stream order status changes as Server-Sent Events
+      security:
+        - bearerAuth: [ ]
 
       parameters:
         - name: id
           in: path
           required: true
           description: Unique identifier of the order.
-          schema:
-            type: string
-        - name: X-User-Id
-          in: header
-          required: false
-          description: Identifier of the buyer. Without it the stream answers 401, for a buyer who does not own the order it answers 403.
           schema:
             type: string
         - name: Last-Event-ID
@@ -384,7 +468,7 @@ paths:
               schema:
                 type: string
         '401':
-          description: X-User-Id header is missing
+          description: The access token is missing, malformed, expired, signed by another key or revoked
           content:
             application/problem+json:
               schema:
@@ -403,6 +487,12 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '500':
           description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
           content:
             application/problem+json:
               schema:
@@ -476,7 +566,134 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /auth/login:
+    post:
+      operationId: login
+      summary: Exchange email and password for an access and refresh token pair
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+
+      responses:
+        '200':
+          description: Credentials are valid, a new token family is started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Email or password is incorrect
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /auth/refresh:
+    post:
+      operationId: refreshTokens
+      summary: Rotate a refresh token and receive a new token pair
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+
+      responses:
+        '200':
+          description: The presented refresh token is spent, a new pair from the same family is issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+        '400':
+          description: Invalid request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Refresh token is unknown, expired, revoked or reused; a reuse revokes the whole family
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Unexpected server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /auth/me:
+    get:
+      operationId: currentUser
+      summary: Return the identity carried by the access token
+      security:
+        - bearerAuth: [ ]
+
+      responses:
+        '200':
+          description: The access token is valid and not revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke the refresh token family and deny the current access token
+      security:
+        - bearerAuth: [ ]
+
+      responses:
+        '204':
+          description: The refresh token family is revoked and the access token is on the denylist until it expires
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Logout could not be completed, the request can be retried
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     Product:
       type: object
@@ -616,13 +833,10 @@ components:
           description: Product price in cents at the time of ordering.
     CreateOrder:
       type: object
+      additionalProperties: false
       required:
-        - user_id
         - items
       properties:
-        user_id:
-          type: string
-          description: Identifier of the buyer.
         items:
           type: array
           minItems: 1
@@ -661,6 +875,63 @@ components:
         user_id:
           type: string
           description: Identifier of the user who starts the session.
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+    TokenPair:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - refresh_token
+      properties:
+        access_token:
+          type: string
+          description: 'ES256-signed JWT to send in the Authorization header as Bearer <token>.'
+        token_type:
+          type: string
+          enum:
+            - Bearer
+        expires_in:
+          type: integer
+          description: Lifetime of the access token in seconds.
+        refresh_token:
+          type: string
+          description: 'Opaque single-use token for POST /auth/refresh.'
+    CurrentUser:
+      type: object
+      required:
+        - id
+        - role
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum:
+            - buyer
+            - seller
+            - admin
     Session:
       type: object
       required:

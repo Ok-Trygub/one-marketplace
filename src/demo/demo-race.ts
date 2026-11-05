@@ -1,12 +1,12 @@
 import 'reflect-metadata'
 import { DataSource, In } from 'typeorm'
-import { dataSourceOptions } from './data-source'
-import { Product } from './entities/product.entity'
-import { User } from './entities/user.entity'
-import { Order } from './entities/order.entity'
-import { Job } from './entities/job.entity'
-import { checkout, CheckoutError } from './services/checkout.service'
-import type { CheckoutFailure } from './services/checkout.service'
+import { dataSourceOptions } from '../data-source'
+import { Product } from '../entities/product.entity'
+import { User } from '../entities/user.entity'
+import { Order } from '../entities/order.entity'
+import { Job } from '../entities/job.entity'
+import { checkout, CheckoutError } from '../services/checkout.service'
+import type { CheckoutFailure } from '../services/checkout.service'
 
 const ATTEMPTS = 50
 const INITIAL_STOCK = 10

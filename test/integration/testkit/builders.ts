@@ -11,7 +11,7 @@ const next = (): number => {
     return sequence
 }
 
-export type UserData = Pick<User, 'email' | 'phone' | 'name' | 'balance'>
+export type UserData = Pick<User, 'email' | 'phone' | 'name' | 'balance' | 'role'>
 export type ProductData = Pick<Product, 'name' | 'description' | 'price' | 'stock'>
 
 export const aUser = (overrides: Partial<UserData> = {}): UserData => {
@@ -22,6 +22,7 @@ export const aUser = (overrides: Partial<UserData> = {}): UserData => {
         phone: `+38050${String(n).padStart(7, '0')}`,
         name: `User ${n}`,
         balance: 1_000_000_000,
+        role: 'buyer',
         ...overrides,
     }
 }

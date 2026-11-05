@@ -1,8 +1,8 @@
 import 'reflect-metadata'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { AppDataSource } from './data-source'
-import { User } from './entities/user.entity'
-import { withRetry } from './services/with-retry'
+import { AppDataSource } from '../data-source'
+import { User } from '../entities/user.entity'
+import { withRetry } from '../services/with-retry'
 
 const CONCURRENT_DEBITS = 3
 const DEBIT_AMOUNT = 10_000

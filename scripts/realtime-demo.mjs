@@ -1,4 +1,10 @@
 import { io } from 'socket.io-client'
+import {
+    SEED_BUYER_EMAIL,
+    SEED_OTHER_BUYER_EMAIL,
+    SEED_PASSWORD,
+    SEED_SELLER_EMAIL,
+} from '../dist/src/seed-credentials.js'
 
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:3000'
 const WAIT_MS = 1000
@@ -19,9 +25,25 @@ const request = async (path, options) => {
     return response.json()
 }
 
-const connect = (userId) =>
+const login = async (email) => {
+    const { access_token: accessToken } = await request('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: SEED_PASSWORD }),
+    })
+
+    return accessToken
+}
+
+const ownOrders = async (token) => {
+    const { items } = await request('/orders?limit=100', { headers: { Authorization: `Bearer ${token}` } })
+
+    return items
+}
+
+const connect = (token) =>
     new Promise((resolve, reject) => {
-        const socket = io(BASE_URL, { auth: { userId }, forceNew: true })
+        const socket = io(BASE_URL, { auth: { token }, forceNew: true })
 
         socket.once('connect', () => resolve(socket))
         socket.once('connect_error', (error) => reject(new Error(`socket connection failed: ${error.message}`)))
@@ -36,19 +58,23 @@ const join = async (socket, orderId) => {
 }
 
 const main = async () => {
-    const { items: orders } = await request('/orders?limit=100')
-    const orderA = orders.find((order) => order.status !== 'cancelled')
-    const orderB = orders.find((order) => order.id !== orderA?.id)
+    const buyerA = await login(SEED_BUYER_EMAIL)
+    const buyerB = await login(SEED_OTHER_BUYER_EMAIL)
+    const seller = await login(SEED_SELLER_EMAIL)
+
+    const orderA = (await ownOrders(buyerA)).find((order) => order.status !== 'cancelled')
+    const orderB = (await ownOrders(buyerB))[0]
 
     if (!orderA || !orderB) {
-        fail('The demo needs two orders, one of them not cancelled. Run npm run seed first.')
+        fail('The demo needs an order of each seed buyer, one of them not cancelled. Run npm run seed first.')
     }
 
     const roomB = sameRoom ? orderA : orderB
+    const tokenB = sameRoom ? buyerA : buyerB
     const expectedB = sameRoom ? 1 : 0
 
-    const clientA = await connect(orderA.user_id)
-    const clientB = await connect(roomB.user_id)
+    const clientA = await connect(buyerA)
+    const clientB = await connect(tokenB)
 
     let receivedA = 0
     let receivedB = 0
@@ -65,7 +91,7 @@ const main = async () => {
 
     await request(`/orders/${orderA.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${seller}` },
         body: JSON.stringify({ status: orderA.status === 'paid' ? 'pending' : 'paid' }),
     })
 

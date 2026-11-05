@@ -5,6 +5,10 @@ const { eachLike, integer, like, regex } = MatchersV3
 
 const jsonContentType = regex('application/json.*', 'application/json; charset=utf-8')
 
+const EXAMPLE_ACCESS_TOKEN = 'header.payload.signature'
+
+const bearerToken = regex('^Bearer [A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$', `Bearer ${EXAMPLE_ACCESS_TOKEN}`)
+
 const provider = new PactV3({
     consumer: CONSUMER,
     provider: PROVIDER,
@@ -17,7 +21,7 @@ describe(`${CONSUMER} → ${PROVIDER}`, () => {
         provider
             .given('order with id 1 exists')
             .uponReceiving('a request for order 1')
-            .withRequest({ method: 'GET', path: '/orders/1' })
+            .withRequest({ method: 'GET', path: '/orders/1', headers: { Authorization: bearerToken } })
             .willRespondWith({
                 status: 200,
                 headers: { 'Content-Type': jsonContentType },
@@ -35,7 +39,9 @@ describe(`${CONSUMER} → ${PROVIDER}`, () => {
             })
 
         await provider.executeTest(async (mockServer) => {
-            const response = await fetch(`${mockServer.url}/orders/1`)
+            const response = await fetch(`${mockServer.url}/orders/1`, {
+                headers: { Authorization: `Bearer ${EXAMPLE_ACCESS_TOKEN}` },
+            })
             const order = await response.json()
 
             expect(response.status).toBe(200)

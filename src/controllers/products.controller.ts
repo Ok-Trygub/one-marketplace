@@ -17,6 +17,9 @@ import { ProductCardBusyError, ProductCardService } from '../services/product-ca
 import type { ProductCard } from '../services/product-card.service'
 import { handleIdempotency } from '../services/idempotency.service'
 import { RateLimitGuard } from '../http/rate-limit.guard'
+import { AuthGuard } from '../auth/auth.guard'
+import { Roles } from '../auth/roles.decorator'
+import { RolesGuard } from '../auth/roles.guard'
 import type { Product } from '../entities/product.entity'
 
 export type ProductResponse = {
@@ -83,6 +86,8 @@ export class ProductsController {
 
     @Post()
     @HttpCode(201)
+    @UseGuards(AuthGuard, RolesGuard)
+    @Roles('seller', 'admin')
     async create(
         @Headers('idempotency-key') idempotencyKey: string,
         @Body() body: CreateProductBody,

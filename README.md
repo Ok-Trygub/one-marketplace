@@ -403,7 +403,7 @@ can-i-deploy after the `prod` tag:
 {"summary":{"deployable":true,"reason":"All required verification results are published and successful","success":1,"failed":0,"unknown":0}}
 ```
 
-**CI.** `.github/workflows/contract.yml` runs the job `contract` on every push and pull request: broker from compose, `test:contract`, publish, `verify:provider` with `PACT_VERSION=${{ github.sha }}`, then a can-i-deploy step that queries the broker matrix for both pacticipant versions and fails the job unless `deployable` is `true`. `PACT_BROKER_URL` and `PACT_BROKER_TOKEN` come from GitHub secrets, with the local compose address as the default.
+**CI.** `.github/workflows/contract.yml` runs the job `contract` on every push and pull request: broker and `redis-queue` from compose, the second one because the guard on `GET /orders/{id}` checks the token denylist, `test:contract`, publish, `verify:provider` with `PACT_VERSION=${{ github.sha }}`, then a can-i-deploy step that queries the broker matrix for both pacticipant versions and fails the job unless `deployable` is `true`. `PACT_BROKER_URL` and `PACT_BROKER_TOKEN` come from GitHub secrets, with the local compose address as the default.
 
 ## Realtime
 
@@ -417,10 +417,10 @@ PATCH /orders/:id/status → OrderStatusService → OrderEventsService
 
 - `src/services/order-status.service.ts` changes the status with one atomic `UPDATE` and publishes the event. Allowed transitions: `pending ⇄ paid`, `pending → cancelled`, `paid → cancelled`; anything else is `409`.
 - `src/services/order-events.service.ts` is the bus: an RxJS `Subject` plus an in-memory buffer of the last 100 events per order, kept for at most 1000 orders with the least recently changed order evicted first. Event numbers grow per order, starting from 1.
-- `src/gateways/orders.gateway.ts` is the socket.io gateway. The client sends `join` with `{ orderId }` and gets an ack. The socket enters the room `orders:<id>` only when `auth.userId` from the handshake is the owner of the order; otherwise the ack is `UNAUTHORIZED`, `FORBIDDEN` or `ORDER_NOT_FOUND`. The event `order.status` goes only to that room.
-- `GET /orders/:id/events` is the SSE stream of the same events with `id:`, `event:` and `data:`. The header `X-User-Id` names the buyer: without it the answer is `401`, for a buyer who does not own the order it is `403`. A new connection receives only new events; with `Last-Event-ID: N` it first receives the buffered events with a number greater than `N`.
+- `src/gateways/orders.gateway.ts` is the socket.io gateway. The client sends `join` with `{ orderId }` and gets an ack. The socket enters the room `orders:<id>` only when the access token in `auth.token` of the handshake is valid and belongs to the owner of the order; otherwise the ack is `UNAUTHORIZED`, `UNAVAILABLE`, `FORBIDDEN` or `ORDER_NOT_FOUND`. The event `order.status` goes only to that room.
+- `GET /orders/:id/events` is the SSE stream of the same events with `id:`, `event:` and `data:`. It needs `Authorization: Bearer <access token>`: without a valid token the answer is `401`, for a buyer who does not own the order it is `403`. A new connection receives only new events; with `Last-Event-ID: N` it first receives the buffered events with a number greater than `N`. The stream ends after logout and at the token `exp`.
 
-The project has no authentication yet: the gateway trusts `auth.userId` from the handshake and the SSE endpoint trusts `X-User-Id`. In production both would verify a signed token, carried in a cookie for the browser `EventSource`, which cannot set headers.
+Both channels verify the same access token as the HTTP API, see [Auth](#auth). A browser `EventSource` cannot set headers, so a browser client would carry the token in a cookie.
 
 Start the application on port 3000, after the database is up, migrated and seeded as in [Grading](#grading):
 
@@ -429,19 +429,22 @@ npm run build
 PORT=3000 node dist/src/server.js
 ```
 
-Demo of room isolation. It takes two seeded orders, connects two socket.io clients, changes the status of order A over HTTP and prints what each client received:
+Demo of room isolation. It logs in as two seeded buyers and the seeded seller, takes an order of each buyer, connects two socket.io clients with the buyers' tokens, changes the status of order A as the seller and prints what each client received:
 
 ```bash
 node scripts/realtime-demo.mjs; echo "exit=$?"               # different rooms: A_RECEIVED=1, B_RECEIVED=0, exit=0
 node scripts/realtime-demo.mjs --same-room; echo "exit=$?"   # both clients in the room of order A: A_RECEIVED=1, B_RECEIVED=1, exit=0
 ```
 
-SSE by hand, with the id of any order that is not cancelled and the id of its buyer:
+SSE by hand, as the seeded buyer and the seeded seller, with the id of an order of that buyer that is not cancelled:
 
 ```bash
-curl -sN -H 'X-User-Id: 1' http://localhost:3000/orders/1/events &
-curl -s -X PATCH http://localhost:3000/orders/1/status -H 'Content-Type: application/json' -d '{"status":"pending"}'
-curl -sN --max-time 2 -H 'X-User-Id: 1' -H 'Last-Event-ID: 3' http://localhost:3000/orders/1/events
+login() { curl -s -X POST http://localhost:3000/auth/login -H 'Content-Type: application/json' -d "{\"email\":\"$1\",\"password\":\"marketplace-dev\"}" | node -pe "JSON.parse(require('fs').readFileSync(0)).access_token"; }
+BUYER=$(login olena.shevchenko@gmail.com)
+SELLER=$(login taras.oliinyk@outlook.com)
+curl -sN -H "Authorization: Bearer $BUYER" http://localhost:3000/orders/1/events &
+curl -s -X PATCH http://localhost:3000/orders/1/status -H 'Content-Type: application/json' -H "Authorization: Bearer $SELLER" -d '{"status":"pending"}'
+curl -sN --max-time 2 -H "Authorization: Bearer $BUYER" -H 'Last-Event-ID: 3' http://localhost:3000/orders/1/events
 ```
 
 **Two instances.** With two instances behind a load balancer a status change handled by the first instance reaches only the clients connected to the first one, because the rooms and the event buffer live in the memory of one process, and a restart empties the buffer; the cure is the socket.io Redis adapter for the rooms and a shared bus such as Redis Pub/Sub for the SSE stream and its buffer.
@@ -522,7 +525,9 @@ Two instances: the cache `redis-cache` needs `allkeys-lru` with `maxmemory`, Bul
 
 Sessions are stored in `redis-queue`, because `allkeys-lru` in the cache instance would evict an active session.
 
-Rate limit is a sliding window, because bursts are not allowed: a fixed window lets 2 × limit through at the window edge.
+`POST /sessions` with `X-Session-Token` stays the demonstration of Redis sessions with a rolling TTL: it trusts `user_id` from the body and grants no access to orders or products, which require the access token, see [Auth](#auth).
+
+Rate limit is a sliding window, because bursts are not allowed: a fixed window lets 2 × limit through at the window edge. The limit is counted per client IP; a header such as `X-User-Id` is not trusted, because a client could send a new value with every request.
 
 | Demo | My run |
 |---|---|
@@ -532,6 +537,67 @@ Rate limit is a sliding window, because bursts are not allowed: a fixed window l
 | `demo:queue` | `queue-noeviction=1 attempts=3 completed=1 added=2 queued=1 schedulers=1 scheduled-runs=2` |
 
 **If the stampede lock breaks**, for example its TTL expires while the owner is paused, two readers load the same product card from the database and both write the same value to the cache. The cost is one extra read; no state is corrupted, because the card is derived data and the database stays the source of truth.
+
+## Auth
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `JWT_PRIVATE_KEY` | сховище (#11) | ES256 private key, PKCS#8 PEM in base64, signs access tokens |
+| `JWT_PUBLIC_KEY` | сховище (#11) | ES256 public key, SPKI PEM in base64, verifies access tokens |
+| `JWT_KID` | сховище (#11) | key id written into the token header |
+| `REFRESH_TOKEN_PEPPER` | сховище (#11) | HMAC key for `refresh_tokens.token_hash`, at least 32 characters |
+| `JWT_PREVIOUS_KID` | сховище (#11), only during a key rotation | `kid` of the retired key whose tokens are still accepted |
+| `JWT_PREVIOUS_PUBLIC_KEY` | сховище (#11), only during a key rotation | public key of the retired pair, SPKI PEM in base64 |
+
+The schema in `src/config/env.schema.ts` has no defaults for the first four variables and checks that the keys parse as P-256 keys. The two `JWT_PREVIOUS_*` variables are optional, come together or not at all, and the previous `kid` must differ from `JWT_KID`. `ConfigModule` validates the environment while the modules load, before the database pool is created, so a bare `npm run start` without them exits with code 1 and names the missing variable.
+
+| Endpoint | Result |
+|---|---|
+| `POST /auth/login` | email and password ──► `200` with an access and a refresh token, a new token family |
+| `POST /auth/refresh` | refresh token ──► `200` with a new pair; the presented token is spent |
+| `POST /auth/logout` | access token ──► `204`; the family and the access token are revoked |
+| `GET /auth/me` | access token ──► `200` with `id` and `role` |
+
+**Tokens.** The access token is an ES256 JWT for 10 minutes with `sub`, `role`, `sid` (the token family), `jti`, `iss` and `aud`. The refresh token is 32 random bytes in base64url for 7 days; the table `refresh_tokens` keeps only `HMAC-SHA256(token, REFRESH_TOKEN_PEPPER)`, so a dump of the table holds no usable session. Passwords are hashed with scrypt from `node:crypto`.
+
+**Why ES256.** OWASP marks RS256 as not recommended; ES256 gives the same asymmetric split with a 256-bit key and a short signature. Verification pins `algorithms: ['ES256']` together with `iss` and `aud` (RFC 8725 §3.1), so `alg: none` and an HS256 token signed with the public key are rejected.
+
+**Rotation with reuse detection.** One refresh is one transaction: `UPDATE refresh_tokens SET used_at = now() WHERE token_hash = $1 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > now() AND NOT EXISTS (a revoked row in the same family)` and the insert of the next token into the same `family_id`. The family condition covers a refresh that races a logout: the logout `UPDATE` does not see the row inserted by the concurrent refresh, but that row belongs to a family with a revoked row and can never be refreshed. When a spent token comes back, the whole family gets `revoked_at` in the same transaction, the log gets `refresh token reuse detected: user=… family=…`, and `auth:revoked-sid:<family>` goes to the denylist, so the access tokens already issued to the thief and to the honest client stop working too; both get `401`. The revocation is committed in Postgres before Redis is touched, so a failed Redis write loses nothing: `refresh_tokens.revoked_at` is the outbox. The denylist marks itself out of sync on a failed write or a dropped connection, and the guard answers `503` until `AuthMaintenance` has copied every family revoked in the last 600 seconds into Redis; the copy runs on start, on every Redis reconnect and every 5 seconds, and uses the partial index `refresh_tokens_revoked_at_idx`. This is rotation with detection from RFC 9700 §4.14.2, and `family_id` is the link that makes the revocation possible. A refresh does not see the previous access token, so that token stays valid until its `exp`, at most 10 minutes. Two parallel refreshes with one token look like a reuse, so the client serializes refresh behind one shared promise; there is no grace window, because a grace window would answer `200` to a replayed token.
+
+**Why logout is two actions.** The refresh token is a row in Postgres, so it is enough to set `revoked_at` on its family. The access token is self-contained and stays valid until `exp`, so its `jti` goes to the denylist in `redis-queue` with TTL = `exp − now`. The same `MULTI` writes `auth:revoked-sid:<sid>` for 600 seconds, the longest access token lifetime, because the session may hold an older access token issued before the last refresh; the guard checks both keys with one `EXISTS`. Postgres and Redis are two stores and the writes are not atomic: logout writes Postgres first and Redis second, and any failure answers `503`; a repeated logout is safe, because the family update matches nothing and the denylist write is retried. If the client never repeats it, the revoked family in Postgres still reaches the denylist through the same `AuthMaintenance` copy. The denylist lives in `redis-queue` because `noeviction` never drops a key, while `allkeys-lru` in the cache would bring a revoked token back to life. When Redis is unavailable the guard answers `503` instead of letting the token through.
+
+**401 and 403.** No token, a malformed, expired, tampered or revoked token is `401`. A valid token without the right is `403`: a buyer on `POST /products` or `PATCH /orders/{id}/status`, a buyer reading another buyer's order.
+
+**Where the ownership check lives.** `AuthGuard` establishes who the caller is and `RolesGuard` checks the role from the token, both before the controller. Ownership needs the order itself, which a guard does not have, so `OrdersController` loads the order once and compares `order.userId` with the token subject; the SSE stream and the socket.io `join` compare the owner from `findOwnerId` in the same way. Both check the token again before every event: after logout, after a reuse revoked the family or after `exp`, the SSE response ends and the socket is disconnected instead of receiving the next event. The SSE stream also ends at `exp` on its own, so the client reconnects with a fresh token.
+
+**Role in the token is a cache.** A demoted admin or seller keeps the old role until the access token expires, at most 10 minutes; the next refresh reads the role from the database. To cut it sooner, set `revoked_at` on the user's token families and put their `sid` into the denylist.
+
+**Key rotation and `kid`.** Every token carries `kid` in its header, and `TokenService` picks the public key by that `kid` from the map built in `src/auth/verification-keys.ts`; a token with an unknown `kid` is `401`. An overlap rotation takes three deploys without dropping a session:
+
+1. Generate a new pair and keep the old public key and its `kid`.
+2. Put the new pair into `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY` and `JWT_KID`, and the old values into `JWT_PREVIOUS_KID` and `JWT_PREVIOUS_PUBLIC_KEY`. New tokens are signed with the new key, and tokens issued before the deploy are still accepted.
+3. After 10 minutes, the access token lifetime, remove both `JWT_PREVIOUS_*` variables.
+
+Refresh tokens do not depend on the signing key, so a rotation never logs anyone out.
+
+**Cleanup of `refresh_tokens`.** Every rotation adds a row, so `AuthMaintenance` deletes expired rows once an hour in batches of 1000, using `refresh_tokens_expires_at_idx`. It deletes a row only when every row of its family has expired. A spent row of a live family has to stay, because the reuse check finds the family through it.
+
+| Environment | `JWT_KID` | Public key fingerprint, SHA-256 of SPKI DER, first 16 hex |
+|---|---|---|
+| dev | `dev-2026-11` | `22eb8c121798916d` |
+| prod | `prod-2026-11` | `0c36e52fa6f24f78` |
+
+```bash
+bash scripts/with-secrets.sh dev node -e 'const c=require("node:crypto");const pub=c.createPublicKey(Buffer.from(process.env.JWT_PUBLIC_KEY,"base64").toString());console.log(c.createHash("sha256").update(pub.export({type:"spki",format:"der"})).digest("hex").slice(0,16))'
+```
+
+**Domain.** `orders` is the resource with an owner, `products` is the resource only a `seller` or an `admin` writes. Seed users have the password `marketplace-dev`; `taras.oliinyk@outlook.com` is the seller. The demos create their own users `auth-demo-*@example.com` and remove their tokens and orders on every run.
+
+| Demo | My run |
+|---|---|
+| `demo:auth` | `login=200 no-token=401 with-token=200 refresh=200 logout=204 after-logout=401 refresh-after-logout=401 old-access-after-logout=401` |
+| `demo:reuse` | `login=200 r1-refresh=200 r1-reuse=401 r2-after-reuse=401 access-after-reuse=401 family-tokens=2 family-revoked=2` |
+| `demo:rbac` | `anon=401 own=200 foreign=403 role-denied=403 role-allowed=201 tampered=401` |
 
 ## Grading
 
@@ -544,6 +610,17 @@ export REDIS_URL=redis://127.0.0.1:6390
 export REDIS_QUEUE_URL=redis://127.0.0.1:6391
 export PORT=5001
 export SKIP_VAULT=1    # у грейдера немає доступу до сховища
+node -e 'const {generateKeyPairSync}=require("node:crypto");
+const k=generateKeyPairSync("ec",{namedCurve:"P-256",
+  privateKeyEncoding:{type:"pkcs8",format:"pem"},
+  publicKeyEncoding:{type:"spki",format:"pem"}});
+const fs=require("node:fs");
+fs.writeFileSync("/tmp/priv.b64",Buffer.from(k.privateKey).toString("base64"));
+fs.writeFileSync("/tmp/pub.b64",Buffer.from(k.publicKey).toString("base64"));'
+export JWT_KID=grader
+export JWT_PRIVATE_KEY="$(cat /tmp/priv.b64)"
+export JWT_PUBLIC_KEY="$(cat /tmp/pub.b64)"
+export REFRESH_TOKEN_PEPPER="$(openssl rand -base64 32)"
 npm ci
 npm run build
 npm run migrate
@@ -561,6 +638,9 @@ npm run demo:cache; echo "exit=$?"
 npm run demo:session; echo "exit=$?"
 npm run demo:ratelimit; echo "exit=$?"
 npm run demo:queue; echo "exit=$?"
+npm run demo:auth; echo "exit=$?"
+npm run demo:reuse; echo "exit=$?"
+npm run demo:rbac; echo "exit=$?"
 bash scripts/with-secrets.sh dev bash scripts/backup.sh
 bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
 npm run test:integration
@@ -578,15 +658,16 @@ SERVER_PID=$!
 until curl -sf http://localhost:3000/health > /dev/null; do sleep 1; done
 node scripts/realtime-demo.mjs; echo "exit=$?"
 node scripts/realtime-demo.mjs --same-room; echo "exit=$?"
-ORDER=$(curl -s 'http://localhost:3000/orders?limit=100' | node -pe "const o = JSON.parse(require('fs').readFileSync(0)).items.find((order) => order.status !== 'cancelled'); o.id + ' ' + o.user_id")
-ORDER_ID=${ORDER% *}
-OWNER_ID=${ORDER#* }
-curl -sN --max-time 2 -D - -o /dev/null -H "X-User-Id: $OWNER_ID" http://localhost:3000/orders/$ORDER_ID/events | grep -i '^content-type'
-curl -sN --max-time 5 -H "X-User-Id: $OWNER_ID" http://localhost:3000/orders/$ORDER_ID/events &
+login() { curl -s -X POST http://localhost:3000/auth/login -H 'Content-Type: application/json' -d "{\"email\":\"$1\",\"password\":\"marketplace-dev\"}" | node -pe "JSON.parse(require('fs').readFileSync(0)).access_token"; }
+BUYER=$(login olena.shevchenko@gmail.com)
+SELLER=$(login taras.oliinyk@outlook.com)
+ORDER_ID=$(curl -s -H "Authorization: Bearer $BUYER" 'http://localhost:3000/orders?limit=100' | node -pe "JSON.parse(require('fs').readFileSync(0)).items.find((order) => order.status !== 'cancelled').id")
+curl -sN --max-time 2 -D - -o /dev/null -H "Authorization: Bearer $BUYER" http://localhost:3000/orders/$ORDER_ID/events | grep -i '^content-type'
+curl -sN --max-time 5 -H "Authorization: Bearer $BUYER" http://localhost:3000/orders/$ORDER_ID/events &
 STREAM_PID=$!
 sleep 1
-for STATUS in pending paid pending paid pending; do curl -s -o /dev/null -X PATCH http://localhost:3000/orders/$ORDER_ID/status -H 'Content-Type: application/json' -d "{\"status\":\"$STATUS\"}"; done
+for STATUS in pending paid pending paid pending; do curl -s -o /dev/null -X PATCH http://localhost:3000/orders/$ORDER_ID/status -H 'Content-Type: application/json' -H "Authorization: Bearer $SELLER" -d "{\"status\":\"$STATUS\"}"; done
 wait $STREAM_PID
-curl -sN --max-time 2 -H "X-User-Id: $OWNER_ID" -H 'Last-Event-ID: 3' http://localhost:3000/orders/$ORDER_ID/events | grep '^id:' | head -1
+curl -sN --max-time 2 -H "Authorization: Bearer $BUYER" -H 'Last-Event-ID: 3' http://localhost:3000/orders/$ORDER_ID/events | grep '^id:' | head -1
 kill $SERVER_PID
 ```

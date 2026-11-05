@@ -5,6 +5,9 @@ import { User } from './entities/user.entity'
 import { Product } from './entities/product.entity'
 import { Order } from './entities/order.entity'
 import { OrderItem } from './entities/order-item.entity'
+import type { UserRole } from './entities/user.entity'
+import { hashPassword, verifyPassword } from './auth/password'
+import { SEED_PASSWORD } from './seed-credentials'
 
 type OrderStatus = 'pending' | 'paid' | 'cancelled'
 
@@ -18,13 +21,13 @@ type OrderSeed = {
 const INITIAL_BALANCE = 1_000_000_000
 const INITIAL_STOCK = 10
 
-const users = [
-    { email: 'olena.shevchenko@gmail.com', phone: '+380501000001', name: 'Олена Шевченко', balance: INITIAL_BALANCE },
-    { email: 'andrii.bondarenko@ukr.net', phone: '+380671000002', name: 'Андрій Бондаренко', balance: INITIAL_BALANCE },
-    { email: 'iryna.kovalenko@gmail.com', phone: '+380931000003', name: 'Ірина Коваленко', balance: INITIAL_BALANCE },
-    { email: 'dmytro.tkachenko@i.ua', phone: '+380961000004', name: 'Дмитро Ткаченко', balance: INITIAL_BALANCE },
-    { email: 'nataliia.kravchenko@gmail.com', phone: '+380661000005', name: 'Наталія Кравченко', balance: INITIAL_BALANCE },
-    { email: 'taras.oliinyk@outlook.com', phone: '+380731000006', name: 'Тарас Олійник', balance: INITIAL_BALANCE },
+const users: { email: string; phone: string; name: string; balance: number; role: UserRole }[] = [
+    { email: 'olena.shevchenko@gmail.com', phone: '+380501000001', name: 'Олена Шевченко', balance: INITIAL_BALANCE, role: 'buyer' },
+    { email: 'andrii.bondarenko@ukr.net', phone: '+380671000002', name: 'Андрій Бондаренко', balance: INITIAL_BALANCE, role: 'buyer' },
+    { email: 'iryna.kovalenko@gmail.com', phone: '+380931000003', name: 'Ірина Коваленко', balance: INITIAL_BALANCE, role: 'buyer' },
+    { email: 'dmytro.tkachenko@i.ua', phone: '+380961000004', name: 'Дмитро Ткаченко', balance: INITIAL_BALANCE, role: 'buyer' },
+    { email: 'nataliia.kravchenko@gmail.com', phone: '+380661000005', name: 'Наталія Кравченко', balance: INITIAL_BALANCE, role: 'buyer' },
+    { email: 'taras.oliinyk@outlook.com', phone: '+380731000006', name: 'Тарас Олійник', balance: INITIAL_BALANCE, role: 'seller' },
 ]
 
 const products = [
@@ -147,13 +150,24 @@ const main = async () => {
         const orderItemRepository = AppDataSource.getRepository(OrderItem)
 
         const usersByEmail = new Map<string, User>()
+        const passwordHash = await hashPassword(SEED_PASSWORD)
 
         for (const seed of users) {
-            const user = await ensure(userRepository, { email: seed.email }, seed)
+            const user = await ensure(userRepository, { email: seed.email }, { ...seed, passwordHash })
 
             if (user.balance !== seed.balance) {
                 await userRepository.update({ id: user.id }, { balance: seed.balance })
                 user.balance = seed.balance
+            }
+
+            if (user.role !== seed.role) {
+                await userRepository.update({ id: user.id }, { role: seed.role })
+                user.role = seed.role
+            }
+
+            if (!user.passwordHash || !(await verifyPassword(SEED_PASSWORD, user.passwordHash))) {
+                await userRepository.update({ id: user.id }, { passwordHash })
+                user.passwordHash = passwordHash
             }
 
             usersByEmail.set(seed.email, user)

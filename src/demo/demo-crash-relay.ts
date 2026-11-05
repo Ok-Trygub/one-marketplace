@@ -1,8 +1,8 @@
 import 'reflect-metadata'
-import { AppDataSource } from './data-source'
-import { connectBroker } from './messaging/broker'
-import { startConsumer } from './messaging/order-placed.consumer'
-import { relayBatch } from './messaging/outbox-relay'
+import { AppDataSource } from '../data-source'
+import { connectBroker } from '../messaging/broker'
+import { startConsumer } from '../messaging/order-placed.consumer'
+import { relayBatch } from '../messaging/outbox-relay'
 import {
     countOutbox,
     countProcessed,
@@ -13,7 +13,7 @@ import {
     printSummary,
     resetMessaging,
     waitFor,
-} from './messaging/demo-support'
+} from './demo-support'
 
 const CRASH_MESSAGE = 'simulated relay crash between publish and UPDATE published_at'
 const IDEMPOTENCY_KEY = 'demo-crash-relay'

@@ -49,18 +49,11 @@ export class OrdersRepository {
         return order?.userId ?? null
     }
 
-    listByUser(userId: string): Promise<Order[]> {
+    listByUser(userId: string, limit?: number): Promise<Order[]> {
         return this.dataSource.getRepository(Order).find({
             where: { userId },
             relations: { items: true },
             order: { createdAt: 'DESC' },
-        })
-    }
-
-    listRecent(limit: number): Promise<Order[]> {
-        return this.dataSource.getRepository(Order).find({
-            relations: { items: true },
-            order: { id: 'DESC' },
             take: limit,
         })
     }

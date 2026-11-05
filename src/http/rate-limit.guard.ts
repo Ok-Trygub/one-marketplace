@@ -11,7 +11,7 @@ export class RateLimitGuard implements CanActivate {
         const http = context.switchToHttp()
         const request = http.getRequest<Request>()
         const response = http.getResponse<Response>()
-        const client = request.header('x-user-id') ?? request.ip ?? 'unknown'
+        const client = request.ip ?? 'unknown'
         const result = await this.limiter.hit(client)
 
         if (result.allowed) {

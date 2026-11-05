@@ -2,14 +2,14 @@ import 'reflect-metadata'
 import type { AddressInfo } from 'node:net'
 import { NestFactory } from '@nestjs/core'
 import type { INestApplication } from '@nestjs/common'
-import { AppModule } from './app.module'
-import { configureApp } from './http/configure-app'
-import { printSummary } from './messaging/demo-support'
-import { connectState } from './redis/redis'
-import { RATE_LIMIT, rateLimitKey } from './services/rate-limiter.service'
+import { AppModule } from '../app.module'
+import { configureApp } from '../http/configure-app'
+import { printSummary } from './demo-support'
+import { connectState } from '../redis/redis'
+import { RATE_LIMIT, rateLimitKey } from '../services/rate-limiter.service'
 
 const INSTANCES = 2
-const CLIENT = 'demo-ratelimit'
+const CLIENT = '127.0.0.1'
 const PATH = '/products/1'
 
 type Reply = {
@@ -20,7 +20,7 @@ type Reply = {
 const startApp = async (): Promise<{ app: INestApplication; url: string }> => {
     const app = configureApp(await NestFactory.create(AppModule, { logger: false }))
 
-    await app.listen(0)
+    await app.listen(0, CLIENT)
 
     const { port } = app.getHttpServer().address() as AddressInfo
 
@@ -40,7 +40,7 @@ const main = async (): Promise<number> => {
 
         for (let index = 0; index < RATE_LIMIT * INSTANCES; index += 1) {
             const pod = pods[index % pods.length]
-            const response = await fetch(`${pod.url}${PATH}`, { headers: { 'x-user-id': CLIENT } })
+            const response = await fetch(`${pod.url}${PATH}`)
 
             await response.arrayBuffer()
 

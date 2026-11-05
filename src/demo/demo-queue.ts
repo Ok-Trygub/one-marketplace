@@ -1,10 +1,10 @@
 import 'reflect-metadata'
 import type { Worker } from 'bullmq'
-import { AppDataSource } from './data-source'
-import { printSummary, waitFor } from './messaging/demo-support'
-import { connectCache, connectQueue } from './redis/redis'
-import { ProductsRepository } from './repositories/products.repository'
-import { ProductCardService } from './services/product-card.service'
+import { AppDataSource } from '../data-source'
+import { printSummary, waitFor } from './demo-support'
+import { connectCache, connectQueue } from '../redis/redis'
+import { ProductsRepository } from '../repositories/products.repository'
+import { ProductCardService } from '../services/product-card.service'
 import {
     REFRESH_ALL_JOB,
     REFRESH_ALL_SCHEDULER,
@@ -14,8 +14,8 @@ import {
     createRefreshProcessor,
     enqueueRefresh,
     upsertRefreshAllScheduler,
-} from './queue/product-cards.queue'
-import type { RefreshJobData } from './queue/product-cards.queue'
+} from '../queue/product-cards.queue'
+import type { RefreshJobData } from '../queue/product-cards.queue'
 
 const DEMO_QUEUE = 'demo-product-cards'
 const DEMO_EVENT_KEY = 'order-demo-placed'

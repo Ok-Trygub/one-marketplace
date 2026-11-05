@@ -1,10 +1,10 @@
 import 'reflect-metadata'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { AppDataSource } from './data-source'
-import { Job } from './entities/job.entity'
-import { runWorker } from './services/job-worker.service'
-import type { JobHandler } from './services/job-worker.service'
+import { AppDataSource } from '../data-source'
+import { Job } from '../entities/job.entity'
+import { runWorker } from '../services/job-worker.service'
+import type { JobHandler } from '../services/job-worker.service'
 
 const WORKERS = 4
 const REGULAR_JOBS = 20

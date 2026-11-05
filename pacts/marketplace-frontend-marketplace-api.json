@@ -11,6 +11,22 @@
         }
       ],
       "request": {
+        "headers": {
+          "Authorization": "Bearer header.payload.signature"
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^Bearer [A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+                }
+              ]
+            }
+          }
+        },
         "method": "GET",
         "path": "/orders/1"
       },
