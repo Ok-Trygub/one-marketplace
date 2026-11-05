@@ -599,6 +599,51 @@ bash scripts/with-secrets.sh dev node -e 'const c=require("node:crypto");const p
 | `demo:reuse` | `login=200 r1-refresh=200 r1-reuse=401 r2-after-reuse=401 access-after-reuse=401 family-tokens=2 family-revoked=2` |
 | `demo:rbac` | `anon=401 own=200 foreign=403 role-denied=403 role-allowed=201 tampered=401` |
 
+## Files
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `STORAGE_ENDPOINT` | сховище (#11) | S3 API address; empty means AWS S3 |
+| `STORAGE_REGION` | сховище (#11) | region in the SigV4 signature |
+| `STORAGE_ACCESS_KEY` | сховище (#11) | storage access key of the API, the edge and the demos |
+| `STORAGE_SECRET_KEY` | сховище (#11) | secret of that key |
+| `STORAGE_BUCKET` | сховище (#11) | bucket name |
+| `EDGE_PORT` | environment of `npm run edge`, default `8080` | port of the cache layer, not a secret |
+
+**Presigned PUT lives 300 seconds.** A product photo or an avatar is uploaded from a form right after the user picks the file, and five minutes cover a slow mobile link for any file below the multipart threshold. A presigned URL cannot be revoked, so a short lifetime is the only limit on a leaked link. `demo:upload` signs a URL for the same key with a one-second lifetime and gets `403` after it expires.
+
+**Multipart threshold is 10 MiB, part size is `max(5 MiB, ceil(size / 10 000) rounded up to MiB)`.** S3 allows at most 10 000 parts, so a part must be at least `size / 10 000`, and every part except the last must be at least 5 MiB. The threshold is two minimal parts: below it there would be one part, and resuming one part is the same as uploading again. A 15 MiB file is 3 × 5 MiB, a 5 GiB file is 1024 × 5 MiB. Part URLs live 900 seconds; after a break a new process calls `GET /uploads/{id}/parts`, the server asks `ListParts` and signs only the missing parts.
+
+**CDN form: a local edge**, `src/edge.ts`, started with `npm run edge`. The bucket is private, an anonymous request to it gets `403`. The edge fetches objects with its own storage credentials, keeps them in memory and answers with `X-Cache: MISS` or `X-Cache: HIT`; it caches only objects whose `Cache-Control` allows it. Public assets are named after the content hash, `assets/app.15c42ab7.css`, and uploaded with `Cache-Control: public, max-age=31536000, immutable`, so new content gets a new URL and nothing is invalidated.
+
+**Bucket policy for CloudFront with Origin Access Control.** Without the `AWS:SourceArn` condition any CloudFront distribution in any account could read the bucket.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCloudFrontServicePrincipalReadOnly",
+      "Effect": "Allow",
+      "Principal": { "Service": "cloudfront.amazonaws.com" },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::marketplace-files/assets/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::111122223333:distribution/EDFDVBD6EXAMPLE"
+        }
+      }
+    }
+  ]
+}
+```
+
+| Demo | My run |
+|---|---|
+| `demo:upload` | `intent=200 key-from-server=1 api-alive=0 put-offline=200 commit=200 commit-without-bytes=409 tampered=403 expired=403` |
+| `demo:multipart`, run 1 and run 2 | `head-before-complete=404 resumed-parts=1 complete=200 size-match=1 etag-multipart=1` |
+| `demo:cdn` | `direct=403 edge-miss=200 edge-hit=200 cache-hit=1 new-name=1 new-url=200 content-changed=1` |
+
 ## Grading
 
 ```bash
@@ -621,6 +666,11 @@ export JWT_KID=grader
 export JWT_PRIVATE_KEY="$(cat /tmp/priv.b64)"
 export JWT_PUBLIC_KEY="$(cat /tmp/pub.b64)"
 export REFRESH_TOKEN_PEPPER="$(openssl rand -base64 32)"
+export STORAGE_ENDPOINT=http://127.0.0.1:7070
+export STORAGE_REGION=us-east-1
+export STORAGE_ACCESS_KEY=app_user
+export STORAGE_SECRET_KEY=first-pass-storage
+export STORAGE_BUCKET=marketplace-files
 npm ci
 npm run build
 npm run migrate
@@ -641,6 +691,10 @@ npm run demo:queue; echo "exit=$?"
 npm run demo:auth; echo "exit=$?"
 npm run demo:reuse; echo "exit=$?"
 npm run demo:rbac; echo "exit=$?"
+npm run demo:upload; echo "exit=$?"
+npm run demo:multipart; echo "exit=$?"
+npm run demo:multipart; echo "exit=$?"
+npm run demo:cdn; echo "exit=$?"
 bash scripts/with-secrets.sh dev bash scripts/backup.sh
 bash scripts/with-secrets.sh dev bash scripts/restore-drill.sh
 npm run test:integration

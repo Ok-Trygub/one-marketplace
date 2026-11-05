@@ -5,6 +5,7 @@ import { MessagingModule } from './messaging/messaging.module'
 import { RedisModule } from './redis/redis.module'
 import { ProductCardsQueueModule } from './queue/product-cards-queue.module'
 import { AuthModule } from './auth/auth.module'
+import { StorageModule } from './storage/storage.module'
 import { ProductCardRefresher } from './queue/product-card-refresher'
 import { HealthController } from './controllers/health.controller'
 import { ProductsController } from './controllers/products.controller'
@@ -21,10 +22,12 @@ import { SessionService } from './services/session.service'
 import { RateLimiterService } from './services/rate-limiter.service'
 import { OrdersGateway } from './gateways/orders.gateway'
 import { AuthController } from './controllers/auth.controller'
+import { UploadsController } from './controllers/uploads.controller'
+import { UploadsService } from './services/uploads.service'
 
 @Module({
-    imports: [AppConfigModule, DatabaseModule, MessagingModule, RedisModule, ProductCardsQueueModule, AuthModule],
-    controllers: [AuthController, HealthController, ProductsController, OrdersController, SessionsController],
+    imports: [AppConfigModule, DatabaseModule, MessagingModule, RedisModule, ProductCardsQueueModule, AuthModule, StorageModule],
+    controllers: [AuthController, HealthController, ProductsController, OrdersController, SessionsController, UploadsController],
     providers: [
         ProductsRepository,
         OrdersRepository,
@@ -37,6 +40,7 @@ import { AuthController } from './controllers/auth.controller'
         RateLimiterService,
         ProductCardRefresher,
         OrdersGateway,
+        UploadsService,
     ],
 })
 export class AppModule {}

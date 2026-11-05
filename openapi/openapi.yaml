@@ -688,6 +688,163 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /uploads/intent:
+    post:
+      operationId: createUploadIntent
+      summary: Reserve an object key and return a presigned PUT for the bytes
+      description: "The server generates the object key uploads/{userId}/{uuid}.{ext}; the filename from the client never reaches the key. The bytes go straight to the storage with the returned URL, the API does not proxy them."
+      security:
+        - bearerAuth: [ ]
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadIntentRequest'
+
+      responses:
+        '200':
+          description: A PENDING file row exists and the presigned PUT is valid for expires_in seconds
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadIntent'
+        '400':
+          description: The body violates the contract, for example the content type is not allowed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /uploads/commit:
+    post:
+      operationId: commitUpload
+      summary: Confirm with HeadObject that the bytes are in the storage and mark the file COMPLETED
+      security:
+        - bearerAuth: [ ]
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadCommitRequest'
+
+      responses:
+        '200':
+          description: The object exists with the declared size, the file is COMPLETED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          description: The body violates the contract
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The file belongs to another user
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: File not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: The storage has no object for this file yet, or its size differs from the declared one
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /uploads/{id}/parts:
+    get:
+      operationId: resumeMultipartUpload
+      summary: Ask the storage with ListParts which parts are uploaded and sign URLs only for the missing ones
+      description: "A new process after a broken upload calls this, uploads only the parts listed in upload.parts, then calls commit. At most 100 URLs come back at once; the client calls again for the rest."
+      security:
+        - bearerAuth: [ ]
+
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: file_id returned by the intent.
+          schema:
+            type: string
+            format: uuid
+
+      responses:
+        '200':
+          description: Uploaded part numbers and presigned URLs for the missing parts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadIntent'
+        '400':
+          description: The id is not a uuid
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The file belongs to another user
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: File not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: The file is already completed or is uploaded with a single PUT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
 components:
   securitySchemes:
     bearerAuth:
@@ -949,6 +1106,165 @@ components:
           type: string
           format: date-time
           description: Date and time when the session was started.
+    UploadIntentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - filename
+        - content_type
+        - size
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Name shown to the user. It is never used in the object key.
+        content_type:
+          type: string
+          enum:
+            - image/jpeg
+            - image/png
+            - image/webp
+            - application/pdf
+            - application/gzip
+        size:
+          type: integer
+          minimum: 1
+          maximum: 5368709120
+          description: Exact size of the file in bytes; commit compares it with HeadObject.
+    UploadCommitRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - file_id
+      properties:
+        file_id:
+          type: string
+          format: uuid
+    File:
+      type: object
+      required:
+        - file_id
+        - key
+        - status
+        - content_type
+        - size
+        - created_at
+        - completed_at
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          description: Object key generated by the server.
+        status:
+          type: string
+          enum:
+            - PENDING
+            - COMPLETED
+        content_type:
+          type: string
+        size:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+    UploadIntent:
+      allOf:
+        - $ref: '#/components/schemas/File'
+        - type: object
+          required:
+            - upload
+          properties:
+            upload:
+              oneOf:
+                - $ref: '#/components/schemas/SingleUpload'
+                - $ref: '#/components/schemas/MultipartUpload'
+              discriminator:
+                propertyName: mode
+                mapping:
+                  single: '#/components/schemas/SingleUpload'
+                  multipart: '#/components/schemas/MultipartUpload'
+    SingleUpload:
+      type: object
+      required:
+        - mode
+        - method
+        - url
+        - headers
+        - expires_in
+      properties:
+        mode:
+          type: string
+          enum:
+            - single
+        method:
+          type: string
+          enum:
+            - PUT
+        url:
+          type: string
+          format: uri
+          description: Presigned URL. It is a bearer of access until it expires, so it is never logged.
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Headers the PUT must send, they are part of the signature.
+        expires_in:
+          type: integer
+          description: Lifetime of the URL in seconds.
+    MultipartUpload:
+      type: object
+      required:
+        - mode
+        - part_size
+        - part_count
+        - uploaded
+        - parts
+        - expires_in
+      properties:
+        mode:
+          type: string
+          enum:
+            - multipart
+        part_size:
+          type: integer
+          description: "max(5 MiB, size / 10000 rounded up to MiB); every part except the last has exactly this size."
+        part_count:
+          type: integer
+        uploaded:
+          type: array
+          items:
+            type: integer
+          description: Part numbers the storage already holds with the expected size, from ListParts.
+        parts:
+          type: array
+          description: Presigned PUT URLs for missing parts, at most 100 at once.
+          items:
+            type: object
+            required:
+              - part_number
+              - method
+              - url
+            properties:
+              part_number:
+                type: integer
+              method:
+                type: string
+                enum:
+                  - PUT
+              url:
+                type: string
+                format: uri
+        expires_in:
+          type: integer
+          description: Lifetime of the part URLs in seconds.
     Problem:
       type: object
       required:
