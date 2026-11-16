@@ -774,7 +774,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '409':
-          description: The storage has no object for this file yet, or its size differs from the declared one
+          description: The storage has no object for this file yet, its size differs from the declared one, or its first bytes do not match the content type
           content:
             application/problem+json:
               schema:
@@ -835,6 +835,62 @@ paths:
                 $ref: '#/components/schemas/Problem'
         '409':
           description: The file is already completed or is uploaded with a single PUT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: The revocation list is unavailable, the request is refused
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /files/{id}:
+    get:
+      operationId: downloadFile
+      summary: Redirect the owner to a presigned GET of a committed file, valid for 60 seconds
+      description: "The guard and the ownership check run on every request; the bytes come straight from the storage. The redirect carries Cache-Control: no-store."
+      security:
+        - bearerAuth: [ ]
+
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: file_id of a committed file.
+          schema:
+            type: string
+            format: uuid
+
+      responses:
+        '302':
+          description: Location holds a presigned GET URL that expires in 60 seconds
+        '400':
+          description: The id is not a uuid
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: The access token is missing, malformed, expired, signed by another key or revoked
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: The file belongs to another user
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: File not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '409':
+          description: The file is not committed yet
           content:
             application/problem+json:
               schema:

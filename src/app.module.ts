@@ -23,11 +23,12 @@ import { RateLimiterService } from './services/rate-limiter.service'
 import { OrdersGateway } from './gateways/orders.gateway'
 import { AuthController } from './controllers/auth.controller'
 import { UploadsController } from './controllers/uploads.controller'
+import { FilesController } from './controllers/files.controller'
 import { UploadsService } from './services/uploads.service'
 
 @Module({
     imports: [AppConfigModule, DatabaseModule, MessagingModule, RedisModule, ProductCardsQueueModule, AuthModule, StorageModule],
-    controllers: [AuthController, HealthController, ProductsController, OrdersController, SessionsController, UploadsController],
+    controllers: [AuthController, HealthController, ProductsController, OrdersController, SessionsController, UploadsController, FilesController],
     providers: [
         ProductsRepository,
         OrdersRepository,

@@ -8,6 +8,7 @@ import { FILES_DEMO_USER, prepareFilesUser, runOfflineClient, standaloneStorage 
 
 const MIB = 1024 * 1024
 const FILE_SIZE = 15 * MIB
+const GZIP_SIGNATURE = Buffer.from('1f8b08', 'hex')
 
 type Plan = { part_size: number; part_count: number; uploaded: number[]; parts: { part_number: number; url: string }[] }
 
@@ -25,6 +26,7 @@ const main = async (): Promise<number> => {
         for (let offset = 0; offset < FILE_SIZE; offset += 1) {
             body[offset] = (offset * 31 + 7) % 251
         }
+        body.set(GZIP_SIGNATURE, 0)
         await writeFile(file, body)
 
         const login = await demo.call('/auth/login', {

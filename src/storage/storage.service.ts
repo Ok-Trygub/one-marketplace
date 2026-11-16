@@ -141,6 +141,14 @@ export class StorageService {
         }
     }
 
+    async readPrefix(key: string, length: number): Promise<Buffer> {
+        const object = await this.client.send(
+            new GetObjectCommand({ Bucket: this.bucket, Key: key, Range: `bytes=0-${length - 1}` }),
+        )
+
+        return Buffer.from((await object.Body?.transformToByteArray()) ?? [])
+    }
+
     async getObject(key: string): Promise<FetchedObject | null> {
         try {
             const object = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }))

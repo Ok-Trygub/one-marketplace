@@ -15,9 +15,33 @@ export const UPLOAD_CONTENT_TYPES = {
 
 export type UploadContentType = keyof typeof UPLOAD_CONTENT_TYPES
 
+const MAGIC_BYTES_LENGTH = 16
+
+export const hasExpectedSignature = (contentType: string, head: Buffer): boolean => {
+    const startsWith = (hex: string, offset = 0): boolean =>
+        head.subarray(offset, offset + hex.length / 2).equals(Buffer.from(hex, 'hex'))
+
+    switch (contentType) {
+        case 'image/png':
+            return startsWith('89504e470d0a1a0a')
+        case 'image/jpeg':
+            return startsWith('ffd8ff')
+        case 'image/webp':
+            return startsWith('52494646') && startsWith('57454250', 8)
+        case 'application/pdf':
+            return startsWith('255044462d')
+        case 'application/gzip':
+            return startsWith('1f8b')
+        default:
+            return false
+    }
+}
+
 const MIB = 1024 * 1024
 
 export const UPLOAD_URL_TTL_SECONDS = 300
+
+export const DOWNLOAD_URL_TTL_SECONDS = 60
 
 export const PART_URL_TTL_SECONDS = 900
 
@@ -61,6 +85,8 @@ export type UploadErrorReason =
     | 'OBJECT_MISSING'
     | 'SIZE_MISMATCH'
     | 'PARTS_MISSING'
+    | 'CONTENT_MISMATCH'
+    | 'NOT_COMPLETED'
 
 export class UploadError extends Error {
     override readonly name = 'UploadError'
@@ -149,6 +175,10 @@ export class UploadsService {
             )
         }
 
+        if (!hasExpectedSignature(file.contentType, await this.storage.readPrefix(file.key, MAGIC_BYTES_LENGTH))) {
+            throw new UploadError('CONTENT_MISMATCH', `File '${fileId}' does not start with the signature of ${file.contentType}`)
+        }
+
         const files = this.dataSource.getRepository(StoredFile)
 
         await files
@@ -160,6 +190,16 @@ export class UploadsService {
             .execute()
 
         return files.findOneByOrFail({ id: file.id })
+    }
+
+    async downloadUrl(ownerId: string, fileId: string): Promise<string> {
+        const file = await this.load(ownerId, fileId)
+
+        if (file.status !== 'COMPLETED') {
+            throw new UploadError('NOT_COMPLETED', `File '${fileId}' is not committed yet`)
+        }
+
+        return this.storage.presignGet(file.key, DOWNLOAD_URL_TTL_SECONDS)
     }
 
     private async load(ownerId: string, fileId: string): Promise<StoredFile> {

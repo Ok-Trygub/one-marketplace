@@ -69,6 +69,20 @@ const main = async (): Promise<number> => {
         demo = await startDemoApp()
         const committed = await commit(demo, token, fileId)
 
+        const { port: newPort } = demo.app.getHttpServer().address() as AddressInfo
+        const download = await fetch(`http://127.0.0.1:${newPort}/files/${fileId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            redirect: 'manual',
+        })
+        const location = download.headers.get('location') ?? ''
+        const downloaded = location ? await fetch(location) : undefined
+        const downloadedBody = downloaded ? Buffer.from(await downloaded.arrayBuffer()) : Buffer.alloc(0)
+        const anonymousDownload = await fetch(`http://127.0.0.1:${newPort}/files/${fileId}`, { redirect: 'manual' })
+
+        const disguised = (await createIntent(demo, token, 'disguised.png')).body as Intent
+        await put(disguised.upload.url, Buffer.alloc(PNG.length, 0x3c))
+        const commitWrongContent = await commit(demo, token, disguised.file_id)
+
         return finish(
             {
                 intent: intent.status,
@@ -79,6 +93,11 @@ const main = async (): Promise<number> => {
                 'commit-without-bytes': commitWithoutBytes.status,
                 tampered,
                 expired,
+                'commit-wrong-content': commitWrongContent.status,
+                download: download.status,
+                'download-follow': downloaded?.status ?? 0,
+                'download-body-match': downloadedBody.equals(PNG) ? 1 : 0,
+                'download-anonymous': anonymousDownload.status,
             },
             {
                 intent: [200],
@@ -89,6 +108,11 @@ const main = async (): Promise<number> => {
                 'commit-without-bytes': [409],
                 tampered: [403],
                 expired: [403],
+                'commit-wrong-content': [409],
+                download: [302],
+                'download-follow': [200],
+                'download-body-match': [1],
+                'download-anonymous': [401],
             },
         )
     } finally {

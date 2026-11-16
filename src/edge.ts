@@ -35,22 +35,32 @@ const assetKeyOf = (url: string | undefined): string | null => {
     }
 }
 
-const send = (response: ServerResponse, status: number, xCache: string, body: Buffer | string, headers = {}): void => {
-    response.writeHead(status, { ...headers, 'X-Cache': xCache }).end(body)
+const send = (
+    response: ServerResponse,
+    withBody: boolean,
+    status: number,
+    xCache: string,
+    body: Buffer | string,
+    headers = {},
+): void => {
+    response
+        .writeHead(status, { ...headers, 'Content-Length': Buffer.byteLength(body), 'X-Cache': xCache })
+        .end(withBody ? body : undefined)
 }
 
 const server = createServer(async (request, response) => {
     const key = assetKeyOf(request.url)
+    const withBody = request.method === 'GET'
 
-    if (request.method !== 'GET' || !key || !key.startsWith(ASSETS_PREFIX) || !ASSET_KEY.test(key)) {
-        send(response, 404, 'MISS', 'not found')
+    if ((request.method !== 'GET' && request.method !== 'HEAD') || !key || !key.startsWith(ASSETS_PREFIX) || !ASSET_KEY.test(key)) {
+        send(response, withBody, 404, 'MISS', 'not found')
         return
     }
 
     const cached = cache.get(key)
 
     if (cached && cached.expiresAt > Date.now()) {
-        send(response, 200, 'HIT', cached.body, cached.headers)
+        send(response, withBody, 200, 'HIT', cached.body, cached.headers)
         return
     }
 
@@ -60,12 +70,12 @@ const server = createServer(async (request, response) => {
     })
 
     if (object === undefined) {
-        send(response, 502, 'MISS', 'origin unavailable')
+        send(response, withBody, 502, 'MISS', 'origin unavailable')
         return
     }
 
     if (!object) {
-        send(response, 404, 'MISS', 'not found')
+        send(response, withBody, 404, 'MISS', 'not found')
         return
     }
 
@@ -85,7 +95,7 @@ const server = createServer(async (request, response) => {
         }
     }
 
-    send(response, 200, 'MISS', object.body, headers)
+    send(response, withBody, 200, 'MISS', object.body, headers)
 })
 
 const port = Number(process.env.EDGE_PORT ?? 8080)

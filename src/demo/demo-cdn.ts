@@ -59,6 +59,7 @@ const main = async (): Promise<number> => {
         const updatedBody = await updated.text()
         const old = await fetch(`${edgeUrl}/${firstKey}`)
         await old.text()
+        const head = await fetch(`${edgeUrl}/${secondKey}`, { method: 'HEAD' })
 
         return finish(
             {
@@ -71,6 +72,8 @@ const main = async (): Promise<number> => {
                 'new-url': updated.status,
                 'content-changed': updatedBody !== missBody && updatedBody === second.toString() ? 1 : 0,
                 'old-url': old.status,
+                'edge-head': head.status,
+                'edge-head-length-match': Number(head.headers.get('content-length')) === second.length ? 1 : 0,
             },
             {
                 direct: [403],
@@ -82,6 +85,8 @@ const main = async (): Promise<number> => {
                 'new-url': [200],
                 'content-changed': [1],
                 'old-url': [200],
+                'edge-head': [200],
+                'edge-head-length-match': [1],
             },
         )
     } finally {
