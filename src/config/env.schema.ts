@@ -84,6 +84,10 @@ export const envSchema = z.object({
         .int()
         .positive()
         .default(5000),
+
+    STARTUP_DELAY_MS: z.coerce.number().int().min(0).default(0),
+
+    SHUTDOWN_DRAIN_MS: z.coerce.number().int().min(0).default(0),
 }).superRefine((env, context) => {
     if (Boolean(env.JWT_PREVIOUS_KID) !== Boolean(env.JWT_PREVIOUS_PUBLIC_KEY)) {
         context.addIssue({

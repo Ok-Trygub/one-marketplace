@@ -70,15 +70,24 @@ export class StorageService {
 
                 const region = await this.client.config.region()
 
-                await this.client.send(
-                    new CreateBucketCommand({
-                        Bucket: this.bucket,
-                        CreateBucketConfiguration:
-                            region === 'us-east-1' ? undefined : { LocationConstraint: region as BucketLocationConstraint },
-                    }),
-                )
+                const created = await this.client
+                    .send(
+                        new CreateBucketCommand({
+                            Bucket: this.bucket,
+                            CreateBucketConfiguration:
+                                region === 'us-east-1' ? undefined : { LocationConstraint: region as BucketLocationConstraint },
+                        }),
+                    )
+                    .then(() => true)
+                    .catch((createError: unknown) => {
+                        if (createError instanceof S3ServiceException && createError.name === 'BucketAlreadyOwnedByYou') {
+                            return false
+                        }
 
-                return 'created' as const
+                        throw createError
+                    })
+
+                return created ? ('created' as const) : ('exists' as const)
             })
 
         await this.client

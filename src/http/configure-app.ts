@@ -17,7 +17,7 @@ export const configureApp = (app: INestApplication): INestApplication => {
             apiSpec: OPENAPI_SPEC,
             validateRequests: true,
             validateResponses: false,
-            ignorePaths: /^\/health$/,
+            ignorePaths: /^\/(health|healthz|readyz)$/,
         }),
     )
 

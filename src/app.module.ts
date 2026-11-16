@@ -24,11 +24,13 @@ import { OrdersGateway } from './gateways/orders.gateway'
 import { AuthController } from './controllers/auth.controller'
 import { UploadsController } from './controllers/uploads.controller'
 import { FilesController } from './controllers/files.controller'
+import { ProbesController } from './controllers/probes.controller'
+import { Readiness } from './http/readiness'
 import { UploadsService } from './services/uploads.service'
 
 @Module({
     imports: [AppConfigModule, DatabaseModule, MessagingModule, RedisModule, ProductCardsQueueModule, AuthModule, StorageModule],
-    controllers: [AuthController, HealthController, ProductsController, OrdersController, SessionsController, UploadsController, FilesController],
+    controllers: [AuthController, HealthController, ProductsController, OrdersController, SessionsController, UploadsController, FilesController, ProbesController],
     providers: [
         ProductsRepository,
         OrdersRepository,
@@ -42,6 +44,7 @@ import { UploadsService } from './services/uploads.service'
         ProductCardRefresher,
         OrdersGateway,
         UploadsService,
+        Readiness,
     ],
 })
 export class AppModule {}

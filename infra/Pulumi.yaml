@@ -1,0 +1,6 @@
+name: one-marketplace
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: Kubernetes deployment of the one-marketplace API
