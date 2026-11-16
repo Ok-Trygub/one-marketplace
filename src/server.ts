@@ -4,12 +4,18 @@ import { ConfigService } from '@nestjs/config'
 import { AppModule } from './app.module'
 import { configureApp } from './http/configure-app'
 import type { Env } from './config/env.schema'
+import { StorageService } from './storage/storage.service'
 
 async function bootstrap() {
     const app = configureApp(await NestFactory.create(AppModule))
     const port = app.get<ConfigService<Env, true>>(ConfigService).get('PORT', { infer: true })
 
     app.enableShutdownHooks()
+
+    const storage = app.get(StorageService)
+    const bucket = await storage.ensureBucket()
+
+    console.log(`storage: bucket ${storage.bucket} ${bucket === 'created' ? 'created' : 'is ready'}`)
 
     await app.listen(port)
 

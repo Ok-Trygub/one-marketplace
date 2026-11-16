@@ -14,6 +14,8 @@ const isP256Key =
             }
         }
 
+const emptyAsUndefined = (value: unknown): unknown => (value === '' ? undefined : value)
+
 export const envSchema = z.object({
     PORT: z.coerce.number().int().min(1).max(65535),
 
@@ -47,16 +49,31 @@ export const envSchema = z.object({
 
     JWT_KID: z.string().min(1),
 
-    JWT_PREVIOUS_KID: z.string().min(1).optional(),
+    JWT_PREVIOUS_KID: z.preprocess(emptyAsUndefined, z.string().min(1).optional()),
 
-    JWT_PREVIOUS_PUBLIC_KEY: z
-        .string()
-        .refine(isP256Key(createPublicKey), {
-            message: 'must be a base64-encoded PEM public key on the P-256 curve',
-        })
-        .optional(),
+    JWT_PREVIOUS_PUBLIC_KEY: z.preprocess(
+        emptyAsUndefined,
+        z
+            .string()
+            .refine(isP256Key(createPublicKey), {
+                message: 'must be a base64-encoded PEM public key on the P-256 curve',
+            })
+            .optional(),
+    ),
 
     REFRESH_TOKEN_PEPPER: z.string().min(32),
+
+    STORAGE_ENDPOINT: z.preprocess(emptyAsUndefined, z.url({ protocol: /^https?$/ }).optional()),
+
+    STORAGE_REGION: z.string().min(1).default('us-east-1'),
+
+    STORAGE_ACCESS_KEY: z.string().min(1),
+
+    STORAGE_SECRET_KEY: z.string().min(8),
+
+    STORAGE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, {
+        message: 'must be a valid S3 bucket name: 3-63 lowercase letters, digits, dots or hyphens',
+    }),
 
     LOG_LEVEL: z
         .enum(['debug', 'info', 'warn', 'error'])
