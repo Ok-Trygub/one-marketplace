@@ -13,6 +13,9 @@ import type { TokenPair } from '../auth/auth.service'
 import { AuthGuard } from '../auth/auth.guard'
 import type { AuthenticatedUser } from '../auth/authenticated-user'
 import { CurrentUser } from '../auth/current-user.decorator'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('auth.controller')
 
 export type LoginBody = {
     email: string
@@ -77,7 +80,7 @@ export class AuthController {
     @UseGuards(AuthGuard)
     async logout(@CurrentUser() user: AuthenticatedUser): Promise<void> {
         await this.auth.logout(user).catch((error: unknown) => {
-            console.warn(`auth: logout could not finish: ${error instanceof Error ? error.message : error}`)
+            log.warn(`auth: logout could not finish: ${error instanceof Error ? error.message : error}`)
 
             throw new ServiceUnavailableException('Logout could not be completed, retry the request')
         })

@@ -15,6 +15,9 @@ import type { AuthenticatedUser } from '../auth/authenticated-user'
 import { OrdersRepository } from '../repositories/orders.repository'
 import { OrderEventsService } from '../services/order-events.service'
 import type { OrderStatusEvent } from '../services/order-events.service'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('orders.gateway')
 
 export type JoinFailure = 'UNAUTHORIZED' | 'UNAVAILABLE' | 'ORDER_NOT_FOUND' | 'FORBIDDEN'
 
@@ -99,7 +102,7 @@ export class OrdersGateway implements OnGatewayInit, OnModuleDestroy {
                 }),
             )
         } catch (error) {
-            console.warn(
+            log.warn(
                 `ws: order ${event.orderId} event ${event.id} was not delivered: ${error instanceof Error ? error.message : error}`,
             )
         }

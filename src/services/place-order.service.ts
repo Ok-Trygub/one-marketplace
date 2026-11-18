@@ -4,6 +4,9 @@ import { OrdersRepository } from '../repositories/orders.repository'
 import { ProductCardRefresher } from '../queue/product-card-refresher'
 import type { CheckoutInput, CheckoutLine } from './checkout.service'
 import type { Order } from '../entities/order.entity'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('orders.service')
 
 const IDEMPOTENCY_INDEX = 'orders_user_id_idempotency_key_key'
 
@@ -48,6 +51,8 @@ export class PlaceOrderService {
     ) {}
 
     async place(input: CheckoutInput): Promise<PlacedOrder> {
+        log.info({ items: input.items.length }, 'placing order')
+
         const existing = await this.findExisting(input)
 
         if (existing) {

@@ -1,5 +1,8 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { DataSource } from 'typeorm'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('jobs.worker')
 
 export type ClaimedJob = {
     id: string
@@ -71,7 +74,7 @@ export const processNextJob = (
 
             const outcome: JobOutcome = rows[0]?.status === 'failed' ? 'failed' : 'retry'
 
-            console.warn(
+            log.warn(
                 `${workerName}: job ${job.id} threw "${message}" on attempt ${job.attempts + 1}, ${outcome === 'failed' ? 'marked as failed' : 'left pending for another attempt'}`,
             )
 

@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { Inject, Injectable } from '@nestjs/common'
 import type { Redis } from 'ioredis'
 import { REDIS_STATE } from '../redis/redis'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('rate-limiter')
 
 export type RateLimitResult = {
     allowed: boolean
@@ -55,7 +58,7 @@ export class RateLimiterService {
                 retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
             }
         } catch (error) {
-            console.warn(`rate limit: redis is unavailable, request refused: ${error instanceof Error ? error.message : error}`)
+            log.warn(`rate limit: redis is unavailable, request refused: ${error instanceof Error ? error.message : error}`)
 
             return { allowed: false, retryAfterSeconds: 1 }
         }

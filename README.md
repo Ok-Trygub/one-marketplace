@@ -673,10 +673,40 @@ The program in `infra/` checks these variables before it touches the cluster and
 
 **ESO and CSI.** Here the values come from Infisical through `scripts/with-secrets.sh` into the program, which writes the Secret, so they also sit in the Pulumi state encrypted with `PULUMI_CONFIG_PASSPHRASE`. In production the cluster fetches them itself: the External Secrets Operator syncs an Infisical secret into a K8s Secret and refreshes it, or the Secrets Store CSI driver mounts the value into the pod as a file without a Secret object.
 
+## Observability
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Infisical (#11) | OTLP HTTP address of the trace collector, spans go to `/v1/traces` |
+| `PROMETHEUS_URL` | Infisical (#11) | Prometheus API, `demo:metrics` checks that the demo server is scraped |
+| `TRACE_API_URL` | Infisical (#11) | Jaeger query API, `demo:trace` reads the trace by its id |
+| `GRAFANA_ADMIN_PASSWORD` | Infisical (#11) | Grafana admin password of the stand |
+
+`observability/docker-compose.yml` runs Prometheus on 22901, Jaeger on 22904 with OTLP on 22918 and Grafana on 22900. Prometheus scrapes `/metrics` of the API on host ports 22950, where the demos start the server, and 5001. Grafana provisions both datasources and the dashboard `observability/grafana/dashboards/marketplace-red.json`.
+
+| Panel | RED question | PromQL |
+|---|---|---|
+| Rate | How many requests per second does each route serve? | `sum by (route) (rate(http_requests_total[1m]))` |
+| Errors | Which share of requests on each route ends in 5xx? | `sum by (route) (rate(http_requests_total{status=~"5.."}[1m])) / sum by (route) (rate(http_requests_total[1m]))` |
+| Duration | How long do the slowest 5 % of requests take? | `histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[1m])))` |
+
+**Buckets** of `http_request_duration_seconds` are 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10 and 30 seconds. The worst real case is a request that waits for a database connection: the pool gives up after `TIMEOUT_MS` = 5 s, and checkout repeats the whole transaction on a serialization conflict. The top finite bound of 30 s stays above that, so `histogram_quantile` never flattens at the edge, and `demo:metrics` checks `above-top-bucket=0`. The lower bounds start at 5 ms because most reads answer in a few milliseconds. `route` is the Express route template, so `/orders/123` and `/orders/124` are one series.
+
+| Demo | Run 1, run 2, run 3 |
+|---|---|
+| `demo:logs` | `non-json-lines=0 layers=4 distinct-trace-ids=1 trace-id-matches-header=1 burst=8 burst-trace-ids=8 burst-uneven=0 secret-req-logged=1 secret-in-logs=0`, the same in all three runs |
+| `demo:metrics` | `sent-ok=100 sent-fail=5 counter-delta=105 errors-delta=5 above-top-bucket=0 series-before=4 series-after=4`, the same in all three runs |
+| `demo:trace` | `spans=6 orphan-spans=0 trace-matches-header=1 trace-matches-log=1 span-status-error=1`, the same in all three runs |
+
 ## Grading
 
 ```bash
 docker compose up -d --wait
+export GRAFANA_ADMIN_PASSWORD=grader-grafana
+docker compose -f observability/docker-compose.yml up -d --wait
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:22918
+export PROMETHEUS_URL=http://127.0.0.1:22901
+export TRACE_API_URL=http://127.0.0.1:22904
 export DB_HOST=127.0.0.1 DB_PORT=6432 DB_USER=app_user DB_PASSWORD=first-pass DB_NAME=marketplace
 export DATABASE_URL=postgres://app_user:first-pass@127.0.0.1:6432/marketplace
 export BROKER_URL=amqp://app_user:first-pass@127.0.0.1:5672

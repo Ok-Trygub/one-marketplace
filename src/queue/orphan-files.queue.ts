@@ -4,6 +4,9 @@ import type { Redis } from 'ioredis'
 import type { DataSource } from 'typeorm'
 import { cleanupOrphanFiles } from '../storage/orphan-files'
 import type { StorageService } from '../storage/storage.service'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('orphan-files.queue')
 
 export const ORPHAN_FILES_QUEUE = 'orphan-files'
 export const CLEANUP_ORPHANS_JOB = 'cleanup-orphans'
@@ -28,7 +31,7 @@ export const createOrphanCleanupProcessor = (dataSource: DataSource, storage: St
         const removed = await cleanupOrphanFiles(dataSource, storage)
 
         if (removed > 0) {
-            console.log(`orphan-files: removed ${removed} PENDING files older than a day`)
+            log.info(`orphan-files: removed ${removed} PENDING files older than a day`)
         }
 
         return { removed }

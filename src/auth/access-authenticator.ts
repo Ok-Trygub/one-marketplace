@@ -3,6 +3,9 @@ import { AccessDenylist } from './access-denylist'
 import type { AuthenticatedUser } from './authenticated-user'
 import { TokenService } from './token.service'
 import type { AccessClaims } from './token.service'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('auth.authenticator')
 
 export class AccessTokenRejectedError extends Error {
     override readonly name = 'AccessTokenRejectedError'
@@ -47,7 +50,7 @@ export class AccessAuthenticator {
         try {
             return !(await this.denylist.isDenied(user.tokenId, user.sessionId))
         } catch (error) {
-            console.warn(
+            log.warn(
                 `auth: denylist is unavailable, open stream closed: ${error instanceof Error ? error.message : error}`,
             )
 
@@ -67,7 +70,7 @@ export class AccessAuthenticator {
         try {
             return await this.denylist.isDenied(tokenId, sessionId)
         } catch (error) {
-            console.warn(
+            log.warn(
                 `auth: denylist is unavailable, request refused: ${error instanceof Error ? error.message : error}`,
             )
 

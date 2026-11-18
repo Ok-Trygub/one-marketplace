@@ -20,6 +20,9 @@ import type { BucketLocationConstraint } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Inject, Injectable } from '@nestjs/common'
 import { STORAGE_BUCKET, STORAGE_CLIENT } from './storage-client'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('storage')
 
 export type StoredObject = {
     size: number
@@ -111,7 +114,7 @@ export class StorageService {
                     throw error
                 }
 
-                console.warn(
+                log.warn(
                     `storage: bucket ${this.bucket} does not support lifecycle rules, incomplete multipart uploads are not aborted automatically`,
                 )
             })

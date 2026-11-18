@@ -3,6 +3,9 @@ import type { Queue } from 'bullmq'
 import { OrdersRepository } from '../repositories/orders.repository'
 import { PRODUCT_CARDS_QUEUE_TOKEN, enqueueRefresh } from './product-cards.queue'
 import type { RefreshJobData } from './product-cards.queue'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('product-cards.queue')
 
 @Injectable()
 export class ProductCardRefresher {
@@ -17,7 +20,7 @@ export class ProductCardRefresher {
                 [...new Set(productIds)].map((productId) => enqueueRefresh(this.queue, productId, eventKey)),
             )
         } catch (error) {
-            console.warn(
+            log.warn(
                 `product card refresh was not queued for ${eventKey}: ${error instanceof Error ? error.message : error}`,
             )
         }
