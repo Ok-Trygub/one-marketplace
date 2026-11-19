@@ -1,0 +1,77 @@
+Previewing update (demo):
+
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo create 
+@ previewing update....
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo create read pulumi:pulumi:StackReference organization/one-marketplace-aws-base/base
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo create read pulumi:pulumi:StackReference organization/one-marketplace-aws-base/base
+@ previewing update.....
+ +  aws:rds:SubnetGroup postgres create 
+ +  aws:lb:TargetGroup api create 
+ +  aws:iam:Role alb-target create 
+ +  aws:lb:LoadBalancer api create 
+ +  aws:rds:Instance postgres create 
+ +  aws:iam:RolePolicyAttachment alb-target-logs create 
+ +  aws:lambda:Function alb-target create 
+ +  aws:lb:Listener http create 
+ +  aws:lambda:Permission alb-invoke create 
+ +  aws:lb:TargetGroupAttachment api create 
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo create 
+Outputs:
+    albDnsName    : [unknown]
+    dbInstanceId  : "postgrescce6b19"
+    targetGroupArn: [unknown]
+    vpc           : "vpc-8eeb146100e6f4872"
+
+Resources:
+    + 11 to create
+
+Updating (demo):
+
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo creating (0s) 
+@ updating....
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo creating (0s) read pulumi:pulumi:StackReference organization/one-marketplace-aws-base/base
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo creating (0s) read pulumi:pulumi:StackReference organization/one-marketplace-aws-base/base
+ +  aws:rds:SubnetGroup postgres creating (0s) 
+ +  aws:iam:Role alb-target creating (0s) 
+ +  aws:lb:LoadBalancer api creating (0s) 
+ +  aws:lb:TargetGroup api creating (0s) 
+ +  aws:iam:Role alb-target created (0.04s) 
+ +  aws:iam:RolePolicyAttachment alb-target-logs creating (0s) 
+ +  aws:iam:RolePolicyAttachment alb-target-logs created (0.02s) 
+@ updating....
+ +  aws:lb:TargetGroup api creating (0s) error:   sdk-v2/provider2.go:574: sdk.helper_schema: reading ELBv2 Target Group (api-61cc79a): operation error Elastic Load Balancing v2: DescribeTargetGroups, https response error StatusCode: 501, RequestID: 11e66833-7a3f-48d1-a2c7-07c3ba30074b, api error InternalFailure: The API for service elbv2 is either not included in your current license plan or has not yet been emulated by LocalStack.: provider=aws@7.53.0
+ +  aws:lb:LoadBalancer api creating (0s) error:   sdk-v2/provider2.go:574: sdk.helper_schema: reading ELBv2 Load Balancer (api-1333ead): operation error Elastic Load Balancing v2: DescribeLoadBalancers, https response error StatusCode: 501, RequestID: 796e6828-d258-4092-8871-736e776537d3, api error InternalFailure: The API for service elbv2 is either not included in your current license plan or has not yet been emulated by LocalStack.: provider=aws@7.53.0
+ +  aws:rds:SubnetGroup postgres creating (0s) error:   sdk-v2/provider2.go:574: sdk.helper_schema: creating RDS DB Subnet Group (postgres-717ce0e): operation error RDS: CreateDBSubnetGroup, https response error StatusCode: 501, RequestID: 14ab35dd-7a56-4218-853d-20815b94350c, api error InternalFailure: The API for service rds is either not included in your current license plan or has not yet been emulated by LocalStack.: provider=aws@7.53.0
+ +  aws:lb:TargetGroup api creating (0s) error: 1 error occurred:
+ +  aws:lb:LoadBalancer api creating (0s) error: 1 error occurred:
+ +  aws:lb:TargetGroup api **creating failed** error: 1 error occurred:
+ +  aws:rds:SubnetGroup postgres creating (0s) error: 1 error occurred:
+ +  aws:lb:LoadBalancer api **creating failed** error: 1 error occurred:
+ +  aws:rds:SubnetGroup postgres **creating failed** error: 1 error occurred:
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo creating (1s) error: update failed
+ +  pulumi:pulumi:Stack one-marketplace-aws-demo-demo **creating failed** 1 error
+Diagnostics:
+  pulumi:pulumi:Stack (one-marketplace-aws-demo-demo):
+    error: update failed
+
+  aws:rds:SubnetGroup (postgres):
+    error:   sdk-v2/provider2.go:574: sdk.helper_schema: creating RDS DB Subnet Group (postgres-717ce0e): operation error RDS: CreateDBSubnetGroup, https response error StatusCode: 501, RequestID: 14ab35dd-7a56-4218-853d-20815b94350c, api error InternalFailure: The API for service rds is either not included in your current license plan or has not yet been emulated by LocalStack.: provider=aws@7.53.0
+    error: 1 error occurred:
+    	* creating RDS DB Subnet Group (postgres-717ce0e): operation error RDS: CreateDBSubnetGroup, https response error StatusCode: 501, RequestID: 14ab35dd-7a56-4218-853d-20815b94350c, api error InternalFailure: The API for service rds is either not included in your current license plan or has not yet been emulated by LocalStack.
+
+  aws:lb:LoadBalancer (api):
+    error:   sdk-v2/provider2.go:574: sdk.helper_schema: reading ELBv2 Load Balancer (api-1333ead): operation error Elastic Load Balancing v2: DescribeLoadBalancers, https response error StatusCode: 501, RequestID: 796e6828-d258-4092-8871-736e776537d3, api error InternalFailure: The API for service elbv2 is either not included in your current license plan or has not yet been emulated by LocalStack.: provider=aws@7.53.0
+    error: 1 error occurred:
+    	* reading ELBv2 Load Balancer (api-1333ead): operation error Elastic Load Balancing v2: DescribeLoadBalancers, https response error StatusCode: 501, RequestID: 796e6828-d258-4092-8871-736e776537d3, api error InternalFailure: The API for service elbv2 is either not included in your current license plan or has not yet been emulated by LocalStack.
+
+  aws:lb:TargetGroup (api):
+    error:   sdk-v2/provider2.go:574: sdk.helper_schema: reading ELBv2 Target Group (api-61cc79a): operation error Elastic Load Balancing v2: DescribeTargetGroups, https response error StatusCode: 501, RequestID: 11e66833-7a3f-48d1-a2c7-07c3ba30074b, api error InternalFailure: The API for service elbv2 is either not included in your current license plan or has not yet been emulated by LocalStack.: provider=aws@7.53.0
+    error: 1 error occurred:
+    	* reading ELBv2 Target Group (api-61cc79a): operation error Elastic Load Balancing v2: DescribeTargetGroups, https response error StatusCode: 501, RequestID: 11e66833-7a3f-48d1-a2c7-07c3ba30074b, api error InternalFailure: The API for service elbv2 is either not included in your current license plan or has not yet been emulated by LocalStack.
+
+Resources:
+    + 3 created
+    4 errored
+
+Duration: 3s
+

@@ -22,3 +22,4 @@ backups/
 /dataSources.local.xml
 .npm_token
 .pulumi/
+.pulumi-aws/
