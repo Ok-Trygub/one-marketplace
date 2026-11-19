@@ -103,7 +103,7 @@ const deployment = new k8s.apps.v1.Deployment(
                                 { name: 'PORT', value: String(APP_PORT) },
                                 { name: 'STARTUP_DELAY_MS', value: String(STARTUP_DELAY_MS) },
                                 { name: 'SHUTDOWN_DRAIN_MS', value: String(SHUTDOWN_DRAIN_MS) },
-                                { name: 'REV', value: process.env.REV ?? '1' },
+                                { name: 'REV', value: config.get('rev') ?? '1' },
                             ],
                             readinessProbe: {
                                 httpGet: { path: '/readyz', port: 'http' },

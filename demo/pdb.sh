@@ -16,11 +16,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
+wait_disruption_allowed() {
+    for _ in $(seq 1 180); do
+        [ "$(kubectl -n "$NAMESPACE" get pdb "$PDB" -o jsonpath='{.status.disruptionsAllowed}')" -ge 1 ] && return 0
+        sleep 1
+    done
+
+    echo "pdb $PDB did not allow a disruption within 180 s" >&2
+    return 1
+}
+
 kubectl -n "$NAMESPACE" rollout status "deploy/$DEPLOYMENT" --timeout=180s >/dev/null
-for _ in $(seq 1 60); do
-    [ "$(kubectl -n "$NAMESPACE" get pdb "$PDB" -o jsonpath='{.status.disruptionsAllowed}')" -ge 1 ] && break
-    sleep 1
-done
+wait_disruption_allowed
 
 healthy=$(kubectl -n "$NAMESPACE" get pdb "$PDB" -o jsonpath='{.status.currentHealthy}')
 min_available=$(kubectl -n "$NAMESPACE" get pdb "$PDB" -o jsonpath='{.spec.minAvailable}')
@@ -48,6 +55,6 @@ echo "minAvailable=$min_available"
 echo "evict-1=$evict_1"
 echo "evict-2=$evict_2"
 
-kubectl -n "$NAMESPACE" rollout status "deploy/$DEPLOYMENT" --timeout=180s >/dev/null
+wait_disruption_allowed
 
 [ "$evict_1" = "201" ] && [ "$evict_2" = "429" ]
