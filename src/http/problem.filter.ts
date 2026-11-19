@@ -56,7 +56,9 @@ export class ProblemExceptionFilter implements ExceptionFilter {
             return
         }
 
-        layerLogger('http').error({ err: exception }, 'unhandled exception')
+        const { message, code } = exception instanceof Error ? (exception as Error & { code?: unknown }) : { message: String(exception), code: undefined }
+
+        layerLogger('http').error({ err: { message, code } }, 'unhandled exception')
 
         sendProblem(
             response,
