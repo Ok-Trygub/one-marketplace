@@ -48,6 +48,8 @@ run(async () => {
     const serverSpan = trace.spans.find((span) => tagOf(span, 'span.kind') === 'server')
     const logTraceIds = new Set(parseLog(server.lines).entries.filter((entry) => entry?.tenant === tenant).map((entry) => entry.trace_id))
     const spanTraceId = trace.spans[0]?.traceID
+    const serverRoute = serverSpan ? tagOf(serverSpan, 'http.route') : undefined
+    const serverSpanNamed = Boolean(serverRoute) && serverSpan.operationName === `GET ${serverRoute}`
 
     finish(
         {
@@ -57,6 +59,7 @@ run(async () => {
             'trace-matches-header': spanTraceId === traceparent.traceId ? 1 : 0,
             'trace-matches-log': logTraceIds.size === 1 && logTraceIds.has(spanTraceId) ? 1 : 0,
             'span-status-error': serverSpan && tagOf(serverSpan, 'otel.status_code') === 'ERROR' ? 1 : 0,
+            'server-span-route': serverSpanNamed ? 1 : 0,
         },
         [
             ['status=5xx', status >= 500],
@@ -65,6 +68,7 @@ run(async () => {
             ['trace-matches-header=1', spanTraceId === traceparent.traceId],
             ['trace-matches-log=1', logTraceIds.size === 1 && logTraceIds.has(spanTraceId)],
             ['span-status-error=1', Boolean(serverSpan) && tagOf(serverSpan, 'otel.status_code') === 'ERROR'],
+            ['server-span-route=1', serverSpanNamed],
         ],
     )
 })

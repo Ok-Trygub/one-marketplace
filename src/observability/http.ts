@@ -3,11 +3,9 @@ import type { NextFunction, Request, Response } from 'express'
 import { requestContext } from './context'
 import { layerLogger } from './logger'
 import { httpDuration, httpRequests, metricsRegistry } from './metrics'
+import { routeOf } from './route'
 
 const http = layerLogger('http')
-
-const routeOf = (request: Request): string =>
-    request.route?.path ? `${request.baseUrl}${String(request.route.path)}` : 'unmatched'
 
 export const withRequestContext = (request: Request, _response: Response, next: NextFunction): void => {
     const idempotencyKey = request.header('idempotency-key')

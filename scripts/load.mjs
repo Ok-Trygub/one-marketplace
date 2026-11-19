@@ -1,8 +1,15 @@
 import { createWriteStream } from 'node:fs'
 import http from 'node:http'
 
-const [url, output, rateArg = '100'] = process.argv.slice(2)
-const intervalMs = 1000 / Number(rateArg)
+const [url, output] = process.argv.slice(2)
+const rate = Number(process.env.LOAD_RATE ?? '100')
+
+if (!url || !output || !(rate > 0)) {
+    console.error('usage: LOAD_RATE=<requests per second> node scripts/load.mjs <url> <output file>')
+    process.exit(1)
+}
+
+const intervalMs = 1000 / rate
 const codes = createWriteStream(output, { flags: 'a' })
 const pending = new Set()
 const agent = new http.Agent({ keepAlive: true, maxSockets: 32, timeout: 4000 })

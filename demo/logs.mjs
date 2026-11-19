@@ -11,6 +11,7 @@ run(async () => {
     const burst = Array.from({ length: BURST }, () => newTraceparent())
     const tokenMarker = `tokenmarker${randomHex(6)}`
     const passwordMarker = `passmarker${randomHex(6)}`
+    const secretRequest = newTraceparent()
 
     try {
         const buyer = await login(users.owner.email, password)
@@ -33,7 +34,7 @@ run(async () => {
         await Promise.all(burst.map((trace, index) => placeOrder(trace.header, `logs-burst-${runId}-${index}`)))
         await request('/auth/login', {
             method: 'POST',
-            headers: { Authorization: `Bearer ${tokenMarker}` },
+            headers: { Authorization: `Bearer ${tokenMarker}`, traceparent: secretRequest.header },
             body: { email: users.owner.email, password: passwordMarker },
         })
     } finally {
@@ -46,6 +47,7 @@ run(async () => {
     const groups = burst.map((trace) => entries.filter((entry) => entry?.trace_id === trace.traceId).length)
     const burstTraceIds = groups.filter((size) => size > 0).length
     const burstUneven = groups.filter((size) => size !== groups[0]).length
+    const secretRequestLogged = entries.some((entry) => entry?.trace_id === secretRequest.traceId && entry?.req?.url === '/auth/login')
 
     finish(
         {
@@ -56,7 +58,7 @@ run(async () => {
             burst: BURST,
             'burst-trace-ids': burstTraceIds,
             'burst-uneven': burstUneven,
-            'secret-req-logged': entries.some((entry) => entry?.req?.url === '/auth/login') ? 1 : 0,
+            'secret-req-logged': secretRequestLogged ? 1 : 0,
             'secret-in-logs': server.lines.filter((line) => line.includes(tokenMarker) || line.includes(passwordMarker)).length,
         },
         [
@@ -66,7 +68,7 @@ run(async () => {
             ['trace-id-matches-header=1', singleTraceIds.has(single.traceId)],
             ['burst-trace-ids=burst', burstTraceIds === BURST],
             ['burst-uneven=0', burstUneven === 0],
-            ['secret-req-logged=1', entries.some((entry) => entry?.req?.url === '/auth/login')],
+            ['secret-req-logged=1', secretRequestLogged],
             ['secret-in-logs=0', !server.lines.some((line) => line.includes(tokenMarker) || line.includes(passwordMarker))],
         ],
     )

@@ -7,6 +7,7 @@ DEPLOYMENT=marketplace-api
 URL="${ROLLOUT_URL:-http://127.0.0.1:30080/products}"
 MIN_REQUESTS=5000
 TARGET_REQUESTS=6000
+export LOAD_RATE="${LOAD_RATE:-100}"
 
 WORK="$(mktemp -d)"
 LOAD_PID=""
@@ -23,7 +24,7 @@ LOAD_PID=$!
 sleep 3
 
 started=$(date +%s)
-REV="$(date +%s)" bash "$ROOT/scripts/pulumi.sh" up > "$WORK/up.log" 2>&1 || { cat "$WORK/up.log" >&2; exit 1; }
+bash "$ROOT/scripts/pulumi.sh" up --config rev="$(date +%s)" > "$WORK/up.log" 2>&1 || { cat "$WORK/up.log" >&2; exit 1; }
 kubectl -n "$NAMESPACE" rollout status "deploy/$DEPLOYMENT" --timeout=300s >/dev/null
 finished=$(date +%s)
 sleep 3
@@ -38,6 +39,7 @@ ok=$(grep -cx '200' "$WORK/codes.txt" || true)
 failed=$((requests - ok))
 
 echo "profile=hardened"
+echo "load-rate=$LOAD_RATE"
 echo "requests=$requests"
 echo "ok=$ok"
 echo "failed=$failed"
