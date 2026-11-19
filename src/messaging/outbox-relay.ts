@@ -2,6 +2,9 @@ import type { DataSource } from 'typeorm'
 import { UnroutableEventError } from './order-placed.publisher'
 import type { OrderPlacedPublisher } from './order-placed.publisher'
 import type { OrderPlacedEvent } from './order-placed.event'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('outbox.relay')
 
 export const RELAY_BATCH_SIZE = 100
 
@@ -57,7 +60,7 @@ export const relayBatch = async (
                 }
 
                 await manager.query(`UPDATE outbox SET attempts = attempts + 1 WHERE id = $1`, [row.id])
-                console.warn(`relay: outbox ${row.id} was not published: ${error.message}`)
+                log.warn(`relay: outbox ${row.id} was not published: ${error.message}`)
                 failed.push(row.id)
 
                 return 'failed'

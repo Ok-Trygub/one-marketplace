@@ -7,6 +7,9 @@ import { connectQueueProducer } from '../redis/redis'
 import { PRODUCT_CARDS_QUEUE_TOKEN, createProductCardsQueue } from './product-cards.queue'
 import type { RefreshJobData } from './product-cards.queue'
 import type { Env } from '../config/env.schema'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('product-cards.queue')
 
 const PRODUCT_CARDS_QUEUE_CONNECTION = 'PRODUCT_CARDS_QUEUE_CONNECTION'
 
@@ -37,7 +40,7 @@ class ProductCardsQueueLifecycle implements OnModuleDestroy {
                 const queue = createProductCardsQueue(connection)
 
                 queue.on('error', (error) => {
-                    console.warn(`product-cards queue: ${error.message}`)
+                    log.warn(`product-cards queue: ${error.message}`)
                 })
 
                 return queue

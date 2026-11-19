@@ -4,12 +4,16 @@ import type { NextFunction, Request, Response } from 'express'
 import * as OpenApiValidator from 'express-openapi-validator'
 import type { INestApplication } from '@nestjs/common'
 import { ProblemExceptionFilter, sendProblem } from './problem.filter'
+import { metricsEndpoint, observeRequest, withRequestContext } from '../observability/http'
 
 type ValidationFailure = Error & { status?: number }
 
 export const OPENAPI_SPEC = path.join(process.cwd(), 'openapi/openapi.yaml')
 
 export const configureApp = (app: INestApplication): INestApplication => {
+    app.use(withRequestContext)
+    app.use(observeRequest)
+    app.use('/metrics', metricsEndpoint)
     app.use(json())
 
     app.use(
@@ -17,7 +21,7 @@ export const configureApp = (app: INestApplication): INestApplication => {
             apiSpec: OPENAPI_SPEC,
             validateRequests: true,
             validateResponses: false,
-            ignorePaths: /^\/(health|healthz|readyz)$/,
+            ignorePaths: /^\/(health|healthz|readyz|metrics)$/,
         }),
     )
 

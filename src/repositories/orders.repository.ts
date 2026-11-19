@@ -3,6 +3,9 @@ import { DataSource } from 'typeorm'
 import { Order } from '../entities/order.entity'
 import { checkout } from '../services/checkout.service'
 import type { CheckoutInput } from '../services/checkout.service'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('orders.repo')
 
 export type OrderStatusCount = {
     status: string
@@ -15,6 +18,8 @@ export class OrdersRepository {
 
     async create(input: CheckoutInput): Promise<Order> {
         const { orderId } = await checkout(this.dataSource, input)
+
+        log.info({ orderId }, 'order inserted')
         const order = await this.findById(orderId)
 
         if (!order) {
@@ -25,6 +30,8 @@ export class OrdersRepository {
     }
 
     findById(id: string): Promise<Order | null> {
+        log.info({ orderId: id }, 'order lookup')
+
         return this.dataSource.getRepository(Order).findOne({
             where: { id },
             relations: { items: { product: true } },

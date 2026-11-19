@@ -1,6 +1,7 @@
 import { Catch, HttpException, HttpStatus } from '@nestjs/common'
 import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common'
 import type { Request, Response } from 'express'
+import { layerLogger } from '../observability/logger'
 
 export type Problem = {
     type: string
@@ -55,7 +56,9 @@ export class ProblemExceptionFilter implements ExceptionFilter {
             return
         }
 
-        console.error(exception)
+        const { message, code } = exception instanceof Error ? (exception as Error & { code?: unknown }) : { message: String(exception), code: undefined }
+
+        layerLogger('http').error({ err: { message, code } }, 'unhandled exception')
 
         sendProblem(
             response,

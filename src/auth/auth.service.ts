@@ -9,6 +9,9 @@ import { REFRESH_TOKEN_TTL_SECONDS } from './auth.constants'
 import type { AuthenticatedUser } from './authenticated-user'
 import { hashPassword, verifyPassword } from './password'
 import { TokenService } from './token.service'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('auth.service')
 
 export class InvalidCredentialsError extends Error {
     override readonly name = 'InvalidCredentialsError'
@@ -130,12 +133,12 @@ export class AuthService {
         })
 
         if (outcome.kind === 'reused') {
-            console.warn(
+            log.warn(
                 `refresh token reuse detected: user=${outcome.userId} family=${outcome.familyId}, family revoked`,
             )
 
             await this.denylist.revokeSession(outcome.familyId).catch((error: unknown) => {
-                console.warn(
+                log.warn(
                     `auth: denylist write for family ${outcome.familyId} failed, access tokens are refused until the revoked sessions sync restores it: ${error instanceof Error ? error.message : error}`,
                 )
             })

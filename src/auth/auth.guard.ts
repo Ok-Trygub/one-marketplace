@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException, UnauthorizedException } from '
 import type { CanActivate, ExecutionContext } from '@nestjs/common'
 import { AccessAuthenticator, AccessTokenRejectedError, RevocationCheckUnavailableError } from './access-authenticator'
 import type { AuthenticatedRequest } from './authenticated-user'
+import { setRequestContext } from '../observability/context'
 
 const BEARER = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*)$/
 
@@ -28,6 +29,8 @@ export class AuthGuard implements CanActivate {
 
             throw error
         })
+
+        setRequestContext({ userId: request.user.id })
 
         return true
     }

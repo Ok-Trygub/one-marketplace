@@ -32,6 +32,9 @@ import { IdempotencyKeyReusedError, PlaceOrderService } from '../services/place-
 import type { PlacedOrder } from '../services/place-order.service'
 import type { OrderStatus } from '../services/order-status.service'
 import type { Order } from '../entities/order.entity'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('orders.controller')
 
 export type OrderItemResponse = {
     product_id: string
@@ -142,6 +145,8 @@ export class OrdersController {
             throw new NotFoundException(`Product '${unknownProduct.product_id}' was not found`)
         }
 
+        log.info('create order request')
+
         const placed: PlacedOrder = await this.placeOrder
             .place({
                 userId: user.id,
@@ -162,6 +167,8 @@ export class OrdersController {
 
     @Get(':id')
     async getById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<OrderResponse> {
+        log.info({ orderId: id }, 'get order request')
+
         const order = await this.load(id)
 
         if (order.userId !== user.id) {

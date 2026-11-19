@@ -1,4 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('checkout.retry')
 
 const RETRYABLE_CODES = new Set(['40001', '40P01'])
 
@@ -44,7 +47,7 @@ export const withRetry = async <T>(
 
             const delayMs = baseDelayMs * 2 ** (attempt - 1) + Math.floor(Math.random() * baseDelayMs)
 
-            console.warn(
+            log.warn(
                 `${label}: caught ${code} on attempt ${attempt}, retrying whole transaction in ${delayMs} ms`,
             )
             onRetry?.({ attempt, code, delayMs })

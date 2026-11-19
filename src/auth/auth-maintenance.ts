@@ -12,6 +12,9 @@ import {
     REFRESH_TOKENS_CLEANUP_INTERVAL_MS,
     REVOKED_SESSIONS_SYNC_INTERVAL_MS,
 } from './auth.constants'
+import { layerLogger } from '../observability/logger'
+
+const log = layerLogger('auth.maintenance')
 
 export const findRecentlyRevokedSessions = async (dataSource: DataSource): Promise<RevokedSession[]> => {
     const rows = await dataSource.query<{ family_id: string; ttl_seconds: number }[]>(
@@ -105,7 +108,7 @@ export class AuthMaintenance implements OnApplicationBootstrap, OnModuleDestroy 
         const deleted = await cleanupExpiredRefreshTokens(this.dataSource)
 
         if (deleted > 0) {
-            console.log(`auth: deleted ${deleted} refresh tokens of expired families`)
+            log.info(`auth: deleted ${deleted} refresh tokens of expired families`)
         }
     }
 
@@ -123,7 +126,7 @@ export class AuthMaintenance implements OnApplicationBootstrap, OnModuleDestroy 
         const run = task()
             .catch((error: unknown) => {
                 if (!this.stopped) {
-                    console.warn(`auth: ${name} failed: ${describe(error)}`)
+                    log.warn(`auth: ${name} failed: ${describe(error)}`)
                 }
             })
             .finally(() => this.running.delete(name))
