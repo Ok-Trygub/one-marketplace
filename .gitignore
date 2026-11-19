@@ -20,3 +20,5 @@ backups/
 /queries/
 /dataSources/
 /dataSources.local.xml
+.npm_token
+.pulumi/

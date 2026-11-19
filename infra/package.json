@@ -1,0 +1,13 @@
+{
+  "name": "one-marketplace-infra",
+  "private": true,
+  "main": "index.ts",
+  "dependencies": {
+    "@pulumi/kubernetes": "4.34.2",
+    "@pulumi/pulumi": "3.273.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.0",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,12 @@
+config:
+  one-marketplace:kubeContext: kind-one-marketplace
+  one-marketplace:namespace: marketplace
+  one-marketplace:image: one-marketplace-api:hw28
+  one-marketplace:replicas: "2"
+  one-marketplace:nodePort: "30080"
+  one-marketplace:dependencies:
+    "5672": rabbitmq:5672
+    "6390": redis-cache:6379
+    "6391": redis-queue:6379
+    "6432": pgbouncer:6432
+    "7070": storage:7070

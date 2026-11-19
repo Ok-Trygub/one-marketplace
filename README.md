@@ -546,8 +546,8 @@ Rate limit is a sliding window, because bursts are not allowed: a fixed window l
 | `JWT_PUBLIC_KEY` | сховище (#11) | ES256 public key, SPKI PEM in base64, verifies access tokens |
 | `JWT_KID` | сховище (#11) | key id written into the token header |
 | `REFRESH_TOKEN_PEPPER` | сховище (#11) | HMAC key for `refresh_tokens.token_hash`, at least 32 characters |
-| `JWT_PREVIOUS_KID` | сховище (#11), only during a key rotation | `kid` of the retired key whose tokens are still accepted |
-| `JWT_PREVIOUS_PUBLIC_KEY` | сховище (#11), only during a key rotation | public key of the retired pair, SPKI PEM in base64 |
+| `JWT_PREVIOUS_KID` | Infisical (#11), only during a key rotation | `kid` of the retired key whose tokens are still accepted |
+| `JWT_PREVIOUS_PUBLIC_KEY` | Infisical (#11), only during a key rotation | public key of the retired pair, SPKI PEM in base64 |
 
 The schema in `src/config/env.schema.ts` has no defaults for the first four variables and checks that the keys parse as P-256 keys. The two `JWT_PREVIOUS_*` variables are optional, come together or not at all, and the previous `kid` must differ from `JWT_KID`. `ConfigModule` validates the environment while the modules load, before the database pool is created, so a bare `npm run start` without them exits with code 1 and names the missing variable.
 
@@ -646,6 +646,33 @@ bash scripts/with-secrets.sh dev node -e 'const c=require("node:crypto");const p
 | `demo:multipart`, run 1 and run 2 | `head-before-complete=404 resumed-parts=1 complete=200 size-match=1 etag-multipart=1` |
 | `demo:cdn` | `direct=403 edge-miss=200 edge-hit=200 cache-hit=1 new-name=1 new-url=200 content-changed=1` |
 
+## Kubernetes
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `DATABASE_URL` | сховище (#11) | PgBouncer connection string with the password, goes into the K8s Secret |
+| `BROKER_URL` | сховище (#11) | RabbitMQ address with the password, goes into the K8s Secret |
+| `REDIS_URL` | сховище (#11) | cache Redis, goes into the K8s Secret |
+| `REDIS_QUEUE_URL` | сховище (#11) | Redis for the denylist and BullMQ, goes into the K8s Secret |
+| `JWT_PRIVATE_KEY` | сховище (#11) | access token signing key, goes into the K8s Secret |
+| `JWT_PUBLIC_KEY` | сховище (#11) | access token verification key, goes into the K8s Secret |
+| `JWT_KID` | сховище (#11) | key id, goes into the K8s Secret |
+| `REFRESH_TOKEN_PEPPER` | сховище (#11) | HMAC key for refresh tokens, goes into the K8s Secret |
+| `STORAGE_ENDPOINT` | сховище (#11) | object storage address, goes into the K8s Secret |
+| `STORAGE_REGION` | сховище (#11) | object storage region, goes into the K8s Secret |
+| `STORAGE_ACCESS_KEY` | сховище (#11) | object storage access key, goes into the K8s Secret |
+| `STORAGE_SECRET_KEY` | сховище (#11) | object storage secret, goes into the K8s Secret |
+| `STORAGE_BUCKET` | сховище (#11) | bucket name, goes into the K8s Secret |
+| `PULUMI_CONFIG_PASSPHRASE` | сховище (#11) | encryption key of the Pulumi state |
+
+The program in `infra/` checks these variables before it touches the cluster and fails with their names if any is missing. It creates the namespace `marketplace`, the Secret `marketplace-api-env`, and the Deployment, Service, PodDisruptionBudget and HorizontalPodAutoscaler named `marketplace-api`. Pods reach the Compose services by name: `npm run cluster:up` attaches `pgbouncer`, `rabbitmq`, `redis-cache`, `redis-queue` and `storage` to the `kind` network, and the program rewrites `127.0.0.1:<port>` in the values by the `dependencies` map in `infra/Pulumi.dev.yaml`.
+
+**Cluster:** kind 0.33.0, one node, Docker Desktop with 3.8 GiB of memory; the node with two API pods takes about 1.15 GiB, the Compose services about 0.4 GiB.
+
+**`replicas` and the HPA.** The HPA is `autoscaling/v2` with 2 to 4 replicas on 70 % CPU, but kind has no metrics-server, so it shows `cpu: <unknown>/70%` and scales nothing; that is why the Deployment still declares `spec.replicas: 2`. In a cluster with metrics-server both the program and the HPA write `spec.replicas`: the HPA sets the number it computed, the next `pulumi up` writes 2 back, and with server-side apply the two field managers keep overriding each other. There the program has to drop `replicas` and leave the field to the HPA.
+
+**ESO and CSI.** Here the values come from Infisical through `scripts/with-secrets.sh` into the program, which writes the Secret, so they also sit in the Pulumi state encrypted with `PULUMI_CONFIG_PASSPHRASE`. In production the cluster fetches them itself: the External Secrets Operator syncs an Infisical secret into a K8s Secret and refreshes it, or the Secrets Store CSI driver mounts the value into the pod as a file without a Secret object.
+
 ## Grading
 
 ```bash
@@ -726,4 +753,11 @@ for STATUS in pending paid pending paid pending; do curl -s -o /dev/null -X PATC
 wait $STREAM_PID
 curl -sN --max-time 2 -H "Authorization: Bearer $BUYER" -H 'Last-Event-ID: 3' http://localhost:3000/orders/$ORDER_ID/events | grep '^id:' | head -1
 kill $SERVER_PID
+export PULUMI_BACKEND_URL="file://$PWD/.pulumi"
+export PULUMI_CONFIG_PASSPHRASE=hw28-grading
+npm --prefix infra ci
+printf 'dummy-npm-token' > .npm_token
+npm run image:build
+npm run cluster:up
+npm run up
 ```
