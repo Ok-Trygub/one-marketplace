@@ -733,7 +733,7 @@ AWS-акаунт під це ДЗ не відкривався. Стенд пра
 
 ### IAM-роль для teardown
 
-Trust policy ролі `hw31-teardown`: `Principal.Federated` на OIDC-провайдер `token.actions.githubusercontent.com`, `StringEquals` на `aud` = `sts.amazonaws.com`, `StringLike` на `sub` = `repo:Ok-Trygub/one-marketplace:*`. Політика дозволів охоплює знесення стека demo, `Resource` = `*`, у `Action` жодної зірочки.
+Trust policy ролі `hw31-teardown`: `Principal.Federated` на OIDC-провайдер `token.actions.githubusercontent.com`, `StringEquals` на `aud` = `sts.amazonaws.com`, `StringLike` на `sub` = `repo:Ok-Trygub/one-marketplace:*` або `repo:Ok-Trygub@*/one-marketplace@*:*`. Другий рядок потрібен, бо репозиторій створений після 15.07.2026, і GitHub пише в `sub` власника й репозиторій разом з їхніми ID. Політика дозволів охоплює знесення стека demo, `Resource` = `*`, у `Action` жодної зірочки.
 
 - `rds:DescribeDBInstances` — Pulumi читає інстанс перед видаленням і чекає, поки він зникне.
 - `rds:DeleteDBInstance` — видалення RDS.
