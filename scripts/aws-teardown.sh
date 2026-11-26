@@ -61,6 +61,12 @@ state_left=$(state_count aws:)
 rm -f "$STATE"
 
 echo "state-resources-left=$state_left"
+
+DEMOS="$ROOT/evidence/demos.txt"
+touch "$DEMOS"
+grep -v '^state-resources-left=' "$DEMOS" > "$DEMOS.tmp" || true
+echo "state-resources-left=$state_left" >> "$DEMOS.tmp"
+mv "$DEMOS.tmp" "$DEMOS"
 echo "tagged-resources-left=$tagged"
 echo "rds-left=$rds"
 echo "alb-left=$alb"

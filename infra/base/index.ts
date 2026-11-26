@@ -4,6 +4,7 @@ import * as pulumi from '@pulumi/pulumi'
 const config = new pulumi.Config()
 const withBudget = config.getBoolean('withBudget') ?? true
 const githubRepository = config.require('githubRepository')
+const [githubOwner, githubRepositoryName] = githubRepository.split('/')
 const vpcCidr = config.require('vpcCidr')
 
 
@@ -96,7 +97,12 @@ const teardownRole = new aws.iam.Role('teardown', {
                     Action: 'sts:AssumeRoleWithWebIdentity',
                     Condition: {
                         StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
-                        StringLike: { 'token.actions.githubusercontent.com:sub': `repo:${githubRepository}:*` },
+                        StringLike: {
+                            'token.actions.githubusercontent.com:sub': [
+                                `repo:${githubRepository}:*`,
+                                `repo:${githubOwner}@*/${githubRepositoryName}@*:*`,
+                            ],
+                        },
                     },
                 },
             ],
