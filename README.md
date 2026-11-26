@@ -701,7 +701,7 @@ The program in `infra/` checks these variables before it touches the cluster and
 ## AWS
 
 смуга: запасна (LocalStack)
-teardown-run: ПОСИЛАННЯ_НА_DISPATCH_ПРОГІН
+teardown-run: https://github.com/Ok-Trygub/one-marketplace/actions/runs/45804755994
 регіон: eu-central-1
 
 Pulumi-програми лежать в `infra/base` і `infra/demo`, у кожній свій `package.json`. Скрипти `up:base`, `up:demo`, `destroy:demo`, `destroy:base`, `demo:failover`, `demo:nat`, `demo:alb` описані в кореневому `package.json`, усі через `scripts/with-secrets.sh`.
