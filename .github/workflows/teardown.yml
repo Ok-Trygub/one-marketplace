@@ -1,0 +1,78 @@
+name: teardown
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: localstack/localstack:4.14.0
+        env:
+          ENFORCE_IAM: "1"
+        ports:
+          - 23166:4566
+    env:
+      AWS_REGION: eu-central-1
+      AWS_ROLE_ARN: arn:aws:iam::000000000000:role/hw31-teardown
+      AWS_ROLE_SESSION_NAME: github-teardown
+      AWS_ENDPOINT_URL: http://localhost:23166
+      PULUMI_BACKEND_URL: file://${{ github.workspace }}/.pulumi-aws
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: pulumi/actions@v6
+        with:
+          pulumi-version: 3.273.0
+
+      - name: Wait for LocalStack
+        run: until curl -sf http://localhost:23166/_localstack/health > /dev/null; do sleep 2; done
+
+      - name: Exchange the GitHub OIDC token for the teardown role
+        run: |
+          echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/github-oidc-token" >> "$GITHUB_ENV"
+          export AWS_WEB_IDENTITY_TOKEN_FILE="$RUNNER_TEMP/github-oidc-token"
+          curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+          aws sts get-caller-identity --query Arn --output text
+
+      - name: One-run passphrase and database password
+        run: |
+          passphrase=$(openssl rand -hex 24)
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$passphrase"
+          echo "::add-mask::$password"
+          echo "PULUMI_CONFIG_PASSPHRASE=$passphrase" >> "$GITHUB_ENV"
+          echo "DEMO_DB_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: Install the Pulumi programs
+        run: |
+          npm ci --prefix infra/base
+          npm ci --prefix infra/demo
+
+      - name: Recreate the stand in the empty LocalStack
+        run: |
+          bash scripts/aws-pulumi.sh base up --yes --skip-preview
+          bash scripts/aws-pulumi.sh demo up --yes --skip-preview || echo "demo stopped at the LocalStack 501 for RDS and ELBv2"
+
+      - name: pulumi destroy demo
+        working-directory: infra/demo
+        run: pulumi destroy --yes --skip-preview --non-interactive --stack demo
+
+      - name: pulumi destroy base
+        working-directory: infra/base
+        run: pulumi destroy --yes --skip-preview --non-interactive --stack base
+
+      - name: Six emptiness checks
+        run: bash scripts/aws-teardown.sh --checks-only
