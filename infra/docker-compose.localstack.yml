@@ -1,0 +1,14 @@
+name: hw31-localstack
+
+services:
+  localstack:
+    image: localstack/localstack:4.14.0
+    environment:
+      ENFORCE_IAM: "1"
+    ports:
+      - "23166:4566"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://127.0.0.1:4566/_localstack/health > /dev/null" ]
+      interval: 2s
+      timeout: 3s
+      retries: 60

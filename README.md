@@ -698,6 +698,98 @@ The program in `infra/` checks these variables before it touches the cluster and
 | `demo:metrics` | `sent-ok=100 sent-fail=5 counter-delta=105 errors-delta=5 above-top-bucket=0 series-before=4 series-after=4`, the same in all three runs |
 | `demo:trace` | `spans=6 orphan-spans=0 trace-matches-header=1 trace-matches-log=1 span-status-error=1`, the same in all three runs |
 
+## AWS
+
+смуга: запасна (LocalStack)
+teardown-run: https://github.com/Ok-Trygub/one-marketplace/actions/runs/45804755994
+регіон: eu-central-1
+
+Pulumi-програми лежать в `infra/base` і `infra/demo`, у кожній свій `package.json`. Скрипти `up:base`, `up:demo`, `destroy:demo`, `destroy:base`, `demo:failover`, `demo:nat`, `demo:alb` описані в кореневому `package.json`, усі через `scripts/with-secrets.sh`.
+
+AWS-акаунт під це ДЗ не відкривався. Стенд працює в `localstack/localstack:4.14.0` на порту 23166 з `ENFORCE_IAM=1`. Ціна піна: «pinning to a prior version will opt you out of any future updates or security patches».
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `AWS_ENDPOINT_URL` | Infisical (#11) | адреса LocalStack для AWS CLI |
+| `AWS_ACCESS_KEY_ID` | Infisical (#11) | ключ для LocalStack, у CI замість нього OIDC |
+| `AWS_SECRET_ACCESS_KEY` | Infisical (#11) | секрет для LocalStack, у CI замість нього OIDC |
+| `PULUMI_CONFIG_PASSPHRASE` | Infisical (#11) | шифрування стану Pulumi |
+| `DEMO_DB_PASSWORD` | Infisical (#11) | пароль RDS, у стані лежить як secret |
+
+### Погодинна ставка
+
+Ставки взяті з AWS Price List API для eu-central-1, місяць 730 годин.
+
+| Рядок | Ставка | За 730 год | Прайс-лист, дата публікації |
+|---|---|---|---|
+| ALB | $0,02700/год | $19,71 | AWSELB, 2026-11-11T15:36:21Z |
+| RDS db.t4g.micro PostgreSQL, Multi-AZ instance | $0,03700/год | $27,01 | AmazonRDS, 2026-11-17T22:55:03Z |
+| gp3 20 ГіБ, Multi-AZ | $0,274/ГіБ-міс × 20 | $5,48 | AmazonRDS, 2026-11-17T22:55:03Z |
+| Public IPv4 × 2 під ALB | $0,00500/год × 2 | $7,30 | AmazonVPC, 2026-11-17T01:14:03Z |
+| LCU | припущення про навчальне навантаження | $0,29 | AWSELB, ставка $0,008/LCU-год |
+| Разом | $0,08191/год | $59,79 | |
+
+Похідні: 4 години — $0,33, доба — $1,97. NAT у ставку не входить, бо стоїть за прапорцем `hw31:withNat`. Його $0,052/год узята з тексту завдання: прайс-лист AmazonEC2 на 434 МБ я не завантажувала.
+
+### IAM-роль для teardown
+
+Trust policy ролі `hw31-teardown`: `Principal.Federated` на OIDC-провайдер `token.actions.githubusercontent.com`, `StringEquals` на `aud` = `sts.amazonaws.com`, `StringLike` на `sub` = `repo:Ok-Trygub/one-marketplace:*` або `repo:Ok-Trygub@*/one-marketplace@*:*`. Другий рядок потрібен, бо репозиторій створений після 15.07.2026, і GitHub пише в `sub` власника й репозиторій разом з їхніми ID. Політика дозволів охоплює знесення стека demo, `Resource` = `*`, у `Action` жодної зірочки.
+
+- `rds:DescribeDBInstances` — Pulumi читає інстанс перед видаленням і чекає, поки він зникне.
+- `rds:DeleteDBInstance` — видалення RDS.
+- `rds:DescribeDBSubnetGroups` — читання subnet group перед видаленням.
+- `rds:DeleteDBSubnetGroup` — видалення subnet group.
+- `rds:ListTagsForResource` — провайдер читає теги RDS разом зі станом ресурсу.
+- `elasticloadbalancing:DescribeLoadBalancers` — читання ALB і очікування його видалення.
+- `elasticloadbalancing:DeleteLoadBalancer` — видалення ALB, разом з ним AWS звільняє його Public IPv4.
+- `elasticloadbalancing:DescribeListeners` — читання listener перед видаленням.
+- `elasticloadbalancing:DeleteListener` — видалення listener.
+- `elasticloadbalancing:DescribeTargetGroups` — читання target group.
+- `elasticloadbalancing:DeleteTargetGroup` — видалення target group.
+- `elasticloadbalancing:DescribeTargetHealth` — провайдер перевіряє, що ціль знята з групи.
+- `elasticloadbalancing:DeregisterTargets` — зняття Lambda з target group.
+- `elasticloadbalancing:DescribeTags` — провайдер читає теги ALB і target group.
+- `ec2:DescribeNatGateways` — читання NAT і очікування стану deleted.
+- `ec2:DeleteNatGateway` — видалення NAT.
+- `ec2:DescribeAddresses` — читання Elastic IP.
+- `ec2:ReleaseAddress` — звільнення Elastic IP, щоб не платити за idle-адресу.
+- `ec2:DisassociateAddress` — відвʼязка адреси перед звільненням.
+- `lambda:GetFunction` — читання Lambda-цілі ALB.
+- `lambda:DeleteFunction` — видалення Lambda.
+- `lambda:RemovePermission` — видалення дозволу ALB викликати Lambda.
+- `iam:GetRole` — читання ролі виконання Lambda.
+- `iam:DeleteRole` — видалення ролі виконання Lambda.
+- `iam:ListAttachedRolePolicies` — IAM не видаляє роль із привʼязаними політиками, їх треба знайти.
+- `iam:DetachRolePolicy` — відвʼязка `AWSLambdaBasicExecutionRole` від ролі Lambda.
+- `tag:GetResources` — перевірка `tagged-resources-left` після знесення.
+
+`simulate-principal-policy`, обидва прогони на LocalStack 4.14.0:
+
+```text
+sim-allowed=unavailable    rds:DeleteDBInstance, LocalStack відповів InternalError
+sim-denied=unavailable     iam:CreateUser, LocalStack відповів InternalError
+```
+
+LocalStack цю політику не застосовує. Я не перевіряла її локально, бо перевірити локально неможливо. Транскрипт у `evidence/localstack-iam.txt`: користувач з явним Deny на все створює бакет і кладе обʼєкт з кодом 200, вигаданий ключ читає цей обʼєкт з кодом 200, у лозі контейнера немає жодного рядка про заборону.
+
+У CI LocalStack щоразу стартує порожнім, тому джоба спершу піднімає обидва стеки, а потім зносить. На LocalStack це проходить, бо IAM не перевіряється. На справжньому AWS ця роль знесла б лише demo, а base зі своєю роллю зношу локально після здачі.
+
+### RDS Multi-AZ проти мого стека з #15
+
+У #15 у мене один primary PostgreSQL 17 у Docker, PgBouncer у transaction mode, нічний `pg_dump` через `backup.sh` і `restore-drill.sh` з RTO до хвилини та RPO до 24 годин. RDS забирає на себе standby в іншій AZ із синхронною реплікацією і автоматичним failover, якого в мене немає зовсім, автоматичні бекапи з point-in-time recovery в межах retention, що зменшує RPO до хвилин, а ще патчі рушія і шифрування сховища. Мені лишається пулінг зʼєднань, бо PgBouncer або платний RDS Proxy все одно потрібні, перевірка відновлення з бекапу, логічні дампи для виїзду з AWS, міграції й індекси, а також retry у застосунку, бо під час failover зʼєднання рвуться. Standby не читається, тож читання він не масштабує: для цього потрібна окрема read replica.
+
+### KMS
+
+KMS не замінює Infisical з #11. Сховище доставляє секрети в процеси і тримає їх версії, а KMS — шар під ним: у ньому живе ключ, яким шифрується `ENCRYPTION_KEY` самого сховища, і цей ключ ніколи не залишає KMS. RDS тут шифрується AWS-managed ключем `aws/rds`. Власний customer-managed key я не створювала: він тарифікується щомісяця, а видалити його можна не раніше ніж через 7 днів після запиту, тому destroy того ж дня його не прибирає.
+
+### Бекенд стану
+
+На #28 стан лежав у `file://`-бекенді на ноутбуці, і цього вистачало, бо кластер kind теж живе на ноутбуці. Тут локальний стан лежить у `.pulumi-aws`, а джоба в CI не бачить мою машину. На запасній смузі `file://` дозволений: CI піднімає стенд у власному LocalStack, зносить його і перевіряє шість нулів в одному прогоні, стан живе в робочій теці джоби. На основній смузі для цього потрібен Pulumi Cloud або S3-бекенд в акаунті, бо стан має пережити прогін.
+
+### Що показує LocalStack
+
+`evidence/preview-demo.txt` — `pulumi preview --json` стека demo з `aws:rds/instance:Instance`. `evidence/501.txt` — вивід `pulumi up`, який зупиняється на 501 для RDS і ELBv2. LocalStack 4.14.0 пише цю відмову так: «The API for service rds is either not included in your current license plan or has not yet been emulated by LocalStack». Тому `demo:failover` і `demo:alb` на цій смузі не мають з чим працювати, і їхніх ключів у `evidence/demos.txt` немає. Budgets у LocalStack теж немає, тому в `Pulumi.base.yaml` стоїть `withBudget: "false"`, а бюджет створюється першим ресурсом, коли прапорець увімкнений. `demo:nat` піднімає і зносить NAT: `nat-minutes=1`, `nat-billed-hours=1`.
+
 ## Grading
 
 ```bash

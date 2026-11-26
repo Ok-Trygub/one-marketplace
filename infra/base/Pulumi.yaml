@@ -1,0 +1,6 @@
+name: one-marketplace-aws-base
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: Free AWS foundation for hw31, budget, network, security groups and the CI teardown role
