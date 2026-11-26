@@ -27,4 +27,9 @@ if [ -n "${INFISICAL_TOKEN:-}" ]; then
     exec infisical run --env="$ENV_SLUG" --projectId="$(node -p "require('./.infisical.json').workspaceId")" --silent -- "$@"
 fi
 
+if [ "${CI:-}" = true ]; then
+    echo "vault access is missing: set INFISICAL_UNIVERSAL_AUTH_CLIENT_ID and INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET in the repository secrets" >&2
+    exit 1
+fi
+
 exec infisical run --env="$ENV_SLUG" --silent -- "$@"
