@@ -698,6 +698,192 @@ The program in `infra/` checks these variables before it touches the cluster and
 | `demo:metrics` | `sent-ok=100 sent-fail=5 counter-delta=105 errors-delta=5 above-top-bucket=0 series-before=4 series-after=4`, the same in all three runs |
 | `demo:trace` | `spans=6 orphan-spans=0 trace-matches-header=1 trace-matches-log=1 span-status-error=1`, the same in all three runs |
 
+## AWS
+
+смуга: запасна (LocalStack)
+teardown-run: https://github.com/Ok-Trygub/one-marketplace/actions/runs/45804755994
+регіон: eu-central-1
+
+Pulumi-програми лежать в `infra/base` і `infra/demo`, у кожній свій `package.json`. Скрипти `up:base`, `up:demo`, `destroy:demo`, `destroy:base`, `demo:failover`, `demo:nat`, `demo:alb` описані в кореневому `package.json`, усі через `scripts/with-secrets.sh`.
+
+AWS-акаунт під це ДЗ не відкривався. Стенд працює в `localstack/localstack:4.14.0` на порту 23166 з `ENFORCE_IAM=1`. Ціна піна: «pinning to a prior version will opt you out of any future updates or security patches».
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `AWS_ENDPOINT_URL` | Infisical (#11) | адреса LocalStack для AWS CLI |
+| `AWS_ACCESS_KEY_ID` | Infisical (#11) | ключ для LocalStack, у CI замість нього OIDC |
+| `AWS_SECRET_ACCESS_KEY` | Infisical (#11) | секрет для LocalStack, у CI замість нього OIDC |
+| `PULUMI_CONFIG_PASSPHRASE` | Infisical (#11) | шифрування стану Pulumi |
+| `DEMO_DB_PASSWORD` | Infisical (#11) | пароль RDS, у стані лежить як secret |
+
+### Погодинна ставка
+
+Ставки взяті з AWS Price List API для eu-central-1, місяць 730 годин.
+
+| Рядок | Ставка | За 730 год | Прайс-лист, дата публікації |
+|---|---|---|---|
+| ALB | $0,02700/год | $19,71 | AWSELB, 2026-11-11T15:36:21Z |
+| RDS db.t4g.micro PostgreSQL, Multi-AZ instance | $0,03700/год | $27,01 | AmazonRDS, 2026-11-17T22:55:03Z |
+| gp3 20 ГіБ, Multi-AZ | $0,274/ГіБ-міс × 20 | $5,48 | AmazonRDS, 2026-11-17T22:55:03Z |
+| Public IPv4 × 2 під ALB | $0,00500/год × 2 | $7,30 | AmazonVPC, 2026-11-17T01:14:03Z |
+| LCU | припущення про навчальне навантаження | $0,29 | AWSELB, ставка $0,008/LCU-год |
+| Разом | $0,08191/год | $59,79 | |
+
+Похідні: 4 години — $0,33, доба — $1,97. NAT у ставку не входить, бо стоїть за прапорцем `hw31:withNat`. Його $0,052/год узята з тексту завдання: прайс-лист AmazonEC2 на 434 МБ я не завантажувала.
+
+### IAM-роль для teardown
+
+Trust policy ролі `hw31-teardown`: `Principal.Federated` на OIDC-провайдер `token.actions.githubusercontent.com`, `StringEquals` на `aud` = `sts.amazonaws.com`, `StringLike` на `sub` = `repo:Ok-Trygub/one-marketplace:*` або `repo:Ok-Trygub@*/one-marketplace@*:*`. Другий рядок потрібен, бо репозиторій створений після 15.07.2026, і GitHub пише в `sub` власника й репозиторій разом з їхніми ID. Політика дозволів охоплює знесення стека demo, `Resource` = `*`, у `Action` жодної зірочки.
+
+- `rds:DescribeDBInstances` — Pulumi читає інстанс перед видаленням і чекає, поки він зникне.
+- `rds:DeleteDBInstance` — видалення RDS.
+- `rds:DescribeDBSubnetGroups` — читання subnet group перед видаленням.
+- `rds:DeleteDBSubnetGroup` — видалення subnet group.
+- `rds:ListTagsForResource` — провайдер читає теги RDS разом зі станом ресурсу.
+- `elasticloadbalancing:DescribeLoadBalancers` — читання ALB і очікування його видалення.
+- `elasticloadbalancing:DeleteLoadBalancer` — видалення ALB, разом з ним AWS звільняє його Public IPv4.
+- `elasticloadbalancing:DescribeListeners` — читання listener перед видаленням.
+- `elasticloadbalancing:DeleteListener` — видалення listener.
+- `elasticloadbalancing:DescribeTargetGroups` — читання target group.
+- `elasticloadbalancing:DeleteTargetGroup` — видалення target group.
+- `elasticloadbalancing:DescribeTargetHealth` — провайдер перевіряє, що ціль знята з групи.
+- `elasticloadbalancing:DeregisterTargets` — зняття Lambda з target group.
+- `elasticloadbalancing:DescribeTags` — провайдер читає теги ALB і target group.
+- `ec2:DescribeNatGateways` — читання NAT і очікування стану deleted.
+- `ec2:DeleteNatGateway` — видалення NAT.
+- `ec2:DescribeAddresses` — читання Elastic IP.
+- `ec2:ReleaseAddress` — звільнення Elastic IP, щоб не платити за idle-адресу.
+- `ec2:DisassociateAddress` — відвʼязка адреси перед звільненням.
+- `lambda:GetFunction` — читання Lambda-цілі ALB.
+- `lambda:DeleteFunction` — видалення Lambda.
+- `lambda:RemovePermission` — видалення дозволу ALB викликати Lambda.
+- `iam:GetRole` — читання ролі виконання Lambda.
+- `iam:DeleteRole` — видалення ролі виконання Lambda.
+- `iam:ListAttachedRolePolicies` — IAM не видаляє роль із привʼязаними політиками, їх треба знайти.
+- `iam:DetachRolePolicy` — відвʼязка `AWSLambdaBasicExecutionRole` від ролі Lambda.
+- `tag:GetResources` — перевірка `tagged-resources-left` після знесення.
+
+`simulate-principal-policy`, обидва прогони на LocalStack 4.14.0:
+
+```text
+sim-allowed=unavailable    rds:DeleteDBInstance, LocalStack відповів InternalError
+sim-denied=unavailable     iam:CreateUser, LocalStack відповів InternalError
+```
+
+LocalStack цю політику не застосовує. Я не перевіряла її локально, бо перевірити локально неможливо. Транскрипт у `evidence/localstack-iam.txt`: користувач з явним Deny на все створює бакет і кладе обʼєкт з кодом 200, вигаданий ключ читає цей обʼєкт з кодом 200, у лозі контейнера немає жодного рядка про заборону.
+
+У CI LocalStack щоразу стартує порожнім, тому джоба спершу піднімає обидва стеки, а потім зносить. На LocalStack це проходить, бо IAM не перевіряється. На справжньому AWS ця роль знесла б лише demo, а base зі своєю роллю зношу локально після здачі.
+
+### RDS Multi-AZ проти мого стека з #15
+
+У #15 у мене один primary PostgreSQL 17 у Docker, PgBouncer у transaction mode, нічний `pg_dump` через `backup.sh` і `restore-drill.sh` з RTO до хвилини та RPO до 24 годин. RDS забирає на себе standby в іншій AZ із синхронною реплікацією і автоматичним failover, якого в мене немає зовсім, автоматичні бекапи з point-in-time recovery в межах retention, що зменшує RPO до хвилин, а ще патчі рушія і шифрування сховища. Мені лишається пулінг зʼєднань, бо PgBouncer або платний RDS Proxy все одно потрібні, перевірка відновлення з бекапу, логічні дампи для виїзду з AWS, міграції й індекси, а також retry у застосунку, бо під час failover зʼєднання рвуться. Standby не читається, тож читання він не масштабує: для цього потрібна окрема read replica.
+
+### KMS
+
+KMS не замінює Infisical з #11. Сховище доставляє секрети в процеси і тримає їх версії, а KMS — шар під ним: у ньому живе ключ, яким шифрується `ENCRYPTION_KEY` самого сховища, і цей ключ ніколи не залишає KMS. RDS тут шифрується AWS-managed ключем `aws/rds`. Власний customer-managed key я не створювала: він тарифікується щомісяця, а видалити його можна не раніше ніж через 7 днів після запиту, тому destroy того ж дня його не прибирає.
+
+### Бекенд стану
+
+На #28 стан лежав у `file://`-бекенді на ноутбуці, і цього вистачало, бо кластер kind теж живе на ноутбуці. Тут локальний стан лежить у `.pulumi-aws`, а джоба в CI не бачить мою машину. На запасній смузі `file://` дозволений: CI піднімає стенд у власному LocalStack, зносить його і перевіряє шість нулів в одному прогоні, стан живе в робочій теці джоби. На основній смузі для цього потрібен Pulumi Cloud або S3-бекенд в акаунті, бо стан має пережити прогін.
+
+### Що показує LocalStack
+
+`evidence/preview-demo.txt` — `pulumi preview --json` стека demo з `aws:rds/instance:Instance`. `evidence/501.txt` — вивід `pulumi up`, який зупиняється на 501 для RDS і ELBv2. LocalStack 4.14.0 пише цю відмову так: «The API for service rds is either not included in your current license plan or has not yet been emulated by LocalStack». Тому `demo:failover` і `demo:alb` на цій смузі не мають з чим працювати, і їхніх ключів у `evidence/demos.txt` немає. Budgets у LocalStack теж немає, тому в `Pulumi.base.yaml` стоїть `withBudget: "false"`, а бюджет створюється першим ресурсом, коли прапорець увімкнений. `demo:nat` піднімає і зносить NAT: `nat-minutes=1`, `nat-billed-hours=1`.
+
+## CI/CD
+
+Два воркфлоу. `.github/workflows/pr.yml` біжить на кожному pull request і є умовою злиття. `.github/workflows/deploy.yml` біжить на push у `main` і через `workflow_dispatch`. Спільні кроки винесені в composite actions `.github/actions/oidc-gate` і `.github/actions/deploy-kind`. Кожен `uses:` запінений за SHA коміту, тег стоїть у коментарі поруч.
+
+```text
+pr.yml
+  gates ──┬── build ── scan ──┐
+          │                   ├── deploy ── evidence
+          └── oidc ───────────┤
+  pact ───────────────────────┘
+
+deploy.yml
+  resolve ──┐
+            ├── deploy
+  oidc ─────┘
+```
+
+| Джоба | Що робить | Чим каже «ні» |
+|---|---|---|
+| `gates` | actionlint, сходинка 1 `tsc --noEmit` + ESLint, сходинка 2 oasdiff проти спеки базової гілки, сходинка 3 dependency-cruiser | ненульовий код будь-якого інструмента |
+| `pact` | контракт споживача, верифікація провайдера, can-i-deploy з #16 | `deployable=false` |
+| `build` | єдина збірка образу, push у GHCR з тегом `github.sha`, digest у `outputs` | помилка збірки |
+| `scan` | сходинка 4, `npm run scan` з #28 по образу за digest, `SCAN_MAX=20` | `gate=fail` |
+| `oidc` | просить ID-токен GitHub, перевіряє підпис по `jwks_uri` і `oidc/policy.json` | `policy-allow=0` |
+| `deploy` | kind у раннері, `pulumi preview --json`, гейт вартості, `pulumi up` з digest, `demo:rollout` | `gate=fail` без лейбла, `failed≠0`, секрет у маніфесті |
+| `evidence` | збирає артефакт `pipeline-evidence`, `if: always()` | не гейт, лише звіт |
+
+Сходинка 3 перевіряє правила з `.dependency-cruiser.cjs`: контролери й гейтвеї імпортує лише `app.module.ts`, `entities` не залежать від інших шарів, `observability` не знає домену, продакшн-код не імпортує `src/demo`. Тобто модулі не лізуть один в одного.
+
+Образ збирається один раз, у джобі `build`. `deploy` бере digest з її `outputs`, а Pulumi отримує `image=ghcr.io/ok-trygub/one-marketplace@sha256:…`. `deploy.yml` не збирає нічого: він знаходить образ за тегом `pr-head-<sha голови PR>`, тобто за другим батьком merge-коміту, або бере digest з входу `workflow_dispatch`, і викочує той самий digest. Пакет `ghcr.io/ok-trygub/one-marketplace` публічний, тому kind тягне його без ключа.
+
+### Середовища
+
+| Середовище | Де | Коли |
+|---|---|---|
+| `pr` | одноразовий кластер kind у раннері джоби `deploy` в `pr.yml` | кожен pull request |
+| `prod` | одноразовий кластер kind у раннері джоби `deploy` в `deploy.yml`, GitHub environment `prod` | push у `main` або ручний запуск |
+
+Обидва кластери живуть рівно стільки, скільки джоба. Стан Pulumi лежить у файловому бекенді `file://…/.pulumi-ci` у робочій теці раннера, конвеєр не логіниться в Pulumi Cloud.
+
+### OIDC
+
+Умова довіри лежить у `oidc/policy.json`: `iss` = `https://token.actions.githubusercontent.com`, `aud` = `one-marketplace-deploy`, `sub` — два точні рядки для цього репозиторію у форматі з ID: `…:pull_request` для `pr.yml` і `…:environment:prod` для `deploy.yml`. Гейт `scripts/oidc-gate.mjs` тягне `/.well-known/openid-configuration`, з нього `jwks_uri`, перевіряє підпис RS256 ключем з тим самим `kid`, потім `iss`, `aud`, `sub`, `exp`. Друкує `iss`, `aud`, `sub`, `sig-verified`, `policy-allow`, сам токен не друкує, а файл з ним видаляється одразу після перевірки. Без підпису `policy-allow` завжди 0. `iss`, `aud` і файл умови приходять параметрами, тому `demo:oidc` проганяє той самий код зі своїм JWKS. Хмарного акаунта немає: гейт стоїть перед `deploy` і сам вирішує, пускати її чи ні.
+
+### Секрети конвеєра
+
+| Імʼя | Навіщо |
+|---|---|
+| `GITHUB_TOKEN` | push образу в GHCR з `packages: write` лише в джобі `build`, читання в `scan` і `resolve` |
+| `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` | доступ до сховища #11: machine identity, якою `scripts/with-secrets.sh` входить у Infisical у джобі `deploy` |
+| `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` | доступ до сховища #11: пара до client id |
+| `PACT_BROKER_URL` | адреса зовнішнього Pact-брокера з #16, без нього джоба `pact` піднімає локальний |
+| `PACT_BROKER_TOKEN` | токен зовнішнього Pact-брокера з #16, без нього запити йдуть без авторизації |
+
+Ключів хмари й реєстру в секретах немає: реєстр відкриває `GITHUB_TOKEN` на час джоби, хмари немає, а `id-token: write` стоїть лише на джобах `oidc`.
+
+### Змінні застосунку
+
+Значення живуть у сховищі #11 і зʼявляються в момент `pulumi up`, а не збірки. Програма з `infra/` кладе їх у Secret `marketplace-api-env`, под отримує їх через `envFrom.secretRef`. Конвеєр рахує, скільки разів значення цього Secret трапляються в `deployment.json` і `plan.json`, і падає, якщо хоч раз.
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `DATABASE_URL` | сховище #11 | PgBouncer з паролем |
+| `BROKER_URL` | сховище #11 | RabbitMQ з паролем |
+| `REDIS_URL` | сховище #11 | Redis кешу |
+| `REDIS_QUEUE_URL` | сховище #11 | Redis denylist і BullMQ |
+| `JWT_PRIVATE_KEY` | сховище #11 | ключ підпису access-токенів |
+| `JWT_PUBLIC_KEY` | сховище #11 | ключ перевірки access-токенів |
+| `JWT_KID` | сховище #11 | id ключа |
+| `REFRESH_TOKEN_PEPPER` | сховище #11 | HMAC-ключ refresh-токенів |
+| `STORAGE_ENDPOINT` | сховище #11 | адреса обʼєктного сховища |
+| `STORAGE_REGION` | сховище #11 | регіон обʼєктного сховища |
+| `STORAGE_ACCESS_KEY` | сховище #11 | ключ обʼєктного сховища |
+| `STORAGE_SECRET_KEY` | сховище #11 | секрет обʼєктного сховища |
+| `STORAGE_BUCKET` | сховище #11 | бакет |
+| `PULUMI_CONFIG_PASSPHRASE` | сховище #11 | шифрування стану Pulumi |
+
+### Межа маскування
+
+GitHub замінює на `***` лише точне входження значення, яке він знає як секрет. Він не впізнає те саме значення в base64, у URL-кодуванні, розрізане на частини, у JSON з екрануванням або надруковане інструментом у власному форматі. Тому захист тут не маскування, а відсутність місць друку: жодного `echo` секрета, `env`, `printenv` чи `set -x` у кроках, які бачать секрет. Секрети сховища потрапляють лише в процеси під `scripts/with-secrets.sh`, а `pulumi preview --json` показує Secret як `[secret]`. Це шосте місце витоку з #11 після git-історії, лога застосунку, шару образу, `docker inspect` і `docker history`.
+
+### Гейт вартості
+
+`src/mapping.ts` бере з `plan.json` кожен Deployment і StatefulSet, множить `resources.requests` контейнерів на `replicas` і на 730 годин. Ставки — AWS Fargate, Linux x86, eu-central-1, з [прайс-листа AmazonECS](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/eu-central-1/index.json), опублікованого 2026-11-11T23:46:23Z; сторінка — [aws.amazon.com/fargate/pricing](https://aws.amazon.com/fargate/pricing/).
+
+| Ресурс | Ставка |
+|---|---|
+| vCPU | $0,04656 за vCPU-годину |
+| памʼять | $0,00511 за GB-годину |
+
+Поточний план: 2 репліки по 100m CPU і 128Mi, тобто $7,73 на місяць, це `COST_BASELINE_USD` у воркфлоу. Гейт реагує на зміну, а не на суму: бюджет = baseline + більше з $10 і 20 %, зараз $17,73. `COST_BUDGET_USD` задає бюджет напряму. Вердикт друкується рядком `gate=pass` або `gate=fail`, на `fail` код виходу 1. Обхід — лейбл на pull request:
+
+cost-gate-bypass-label: cost-approved
+
 ## Grading
 
 ```bash
@@ -790,4 +976,7 @@ printf 'dummy-npm-token' > .npm_token
 npm run image:build
 npm run cluster:up
 npm run up
+npm run demo:gates
+npm run demo:oidc
+PLAN_JSON=/tmp/hw32/plan.json COST_BUDGET_USD=0 npm run gate:cost
 ```

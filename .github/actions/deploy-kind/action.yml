@@ -1,0 +1,50 @@
+name: deploy-kind
+description: Starts the dependencies and a kind cluster in the runner, runs the cost gate on pulumi preview, pulumi up with the image digest and demo:rollout
+
+inputs:
+  image-ref:
+    description: Image reference with the digest that the cluster runs
+    required: true
+  out-dir:
+    description: Directory for plan.json, deployment.json, rollout.txt and deploy.txt
+    required: true
+  cost-baseline-usd:
+    description: Monthly cost of the current plan, the gate allows growth up to max of 10 USD and 20 percent
+    required: true
+  cost-bypass:
+    description: true when the pull request carries the cost bypass label
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24
+        cache: npm
+
+    - uses: pulumi/actions@96c7761824268174e0d2a4e8c7d75671eebd24a7 # v7.1.0
+      with:
+        pulumi-version: 3.273.0
+
+    - name: Install kind, the vault CLI and the npm dependencies
+      shell: bash
+      run: |
+        curl -sSfLo "$RUNNER_TEMP/kind" https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+        echo "aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  $RUNNER_TEMP/kind" | sha256sum -c -
+        sudo install -m 0755 "$RUNNER_TEMP/kind" /usr/local/bin/kind
+        npm install -g @infisical/cli@0.43.128
+        npm ci
+        npm ci --prefix infra
+
+    - name: Deploy, cost gate and demo:rollout
+      shell: bash
+      env:
+        IMAGE_REF: ${{ inputs.image-ref }}
+        OUT_DIR: ${{ inputs.out-dir }}
+        COST_BASELINE_USD: ${{ inputs.cost-baseline-usd }}
+        COST_BYPASS: ${{ inputs.cost-bypass }}
+        ROLLOUT_MIN_REQUESTS: "2000"
+        ROLLOUT_TARGET_REQUESTS: "3000"
+      run: bash scripts/ci-deploy.sh

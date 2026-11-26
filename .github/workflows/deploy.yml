@@ -1,0 +1,95 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      digest:
+        description: sha256 digest of an image built by the pr workflow, empty to take the one built for the merged pull request
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/ok-trygub/one-marketplace
+  COST_BASELINE_USD: "7.73"
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Take the digest built by the pr workflow, no rebuild
+        id: digest
+        env:
+          INPUT_DIGEST: ${{ inputs.digest }}
+        run: |
+          if [ -n "$INPUT_DIGEST" ]; then
+            digest="$INPUT_DIGEST"
+          else
+            head=$(git rev-parse --verify --quiet HEAD^2) || { echo "HEAD is not a merge commit, run this workflow with the digest input" >&2; exit 1; }
+            digest=$(docker buildx imagetools inspect "$IMAGE_NAME:pr-head-$head" --format '{{json .Manifest}}' | jq -r .digest)
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no image digest for this commit" >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "promoting $IMAGE_NAME@$digest"
+
+  oidc:
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: OIDC gate
+        uses: ./.github/actions/oidc-gate
+
+  deploy:
+    needs: [resolve, oidc]
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+    env:
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${{ secrets.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID }}
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: ${{ secrets.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET }}
+      PULUMI_BACKEND_URL: file://${{ github.workspace }}/.pulumi-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Deploy the promoted digest to the prod environment in kind with pulumi preview, the cost gate, pulumi up and demo:rollout
+        uses: ./.github/actions/deploy-kind
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ needs.resolve.outputs.digest }}
+          out-dir: ${{ runner.temp }}/evidence
+          cost-baseline-usd: ${{ env.COST_BASELINE_USD }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deploy-evidence
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: ignore

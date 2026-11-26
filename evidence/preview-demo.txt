@@ -1,0 +1,823 @@
+Created stack 'demo'
+{
+    "config": {
+        "aws:defaultTags": "{\"tags\":{\"ManagedBy\":\"pulumi\",\"Project\":\"nodejs-pro-hw31\",\"Stack\":\"demo\"}}",
+        "aws:endpoints": "[{\"ec2\":\"http://localhost:23166\",\"elbv2\":\"http://localhost:23166\",\"iam\":\"http://localhost:23166\",\"lambda\":\"http://localhost:23166\",\"rds\":\"http://localhost:23166\",\"resourcegroupstaggingapi\":\"http://localhost:23166\",\"sts\":\"http://localhost:23166\"}]",
+        "aws:region": "eu-central-1",
+        "aws:s3UsePathStyle": "true",
+        "aws:skipCredentialsValidation": "true",
+        "aws:skipMetadataApiCheck": "true",
+        "aws:skipRequestingAccountId": "true",
+        "hw31:withNat": "false",
+        "one-marketplace-aws-demo:baseStack": "organization/one-marketplace-aws-base/base"
+    },
+    "steps": [
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "custom": false,
+                "type": "pulumi:pulumi:Stack",
+                "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#38,19",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#38,19"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#601,38"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "read",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:pulumi::default::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base",
+                "custom": true,
+                "id": "organization/one-marketplace-aws-base/base",
+                "type": "pulumi:pulumi:StackReference",
+                "inputs": {
+                    "name": "organization/one-marketplace-aws-base/base"
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "external": true,
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:pulumi::default::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "sourcePosition": "project:///index.ts#18,14",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#18,14"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:rds/subnetGroup:SubnetGroup::postgres",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:rds/subnetGroup:SubnetGroup::postgres",
+                "custom": true,
+                "type": "aws:rds/subnetGroup:SubnetGroup",
+                "inputs": {
+                    "__defaults": [
+                        "name"
+                    ],
+                    "description": "Managed by Pulumi",
+                    "name": "postgres-54dacdb",
+                    "region": "eu-central-1",
+                    "subnetIds": [
+                        "subnet-17f5e22014a2ccf8a",
+                        "subnet-36b2c5207ce93f80c"
+                    ],
+                    "tagsAll": {
+                        "ManagedBy": "pulumi",
+                        "Project": "nodejs-pro-hw31",
+                        "Stack": "demo"
+                    }
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "description": [],
+                    "subnetIds": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base"
+                    ]
+                },
+                "sourcePosition": "project:///index.ts#24,19",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#24,19"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/loadBalancer:LoadBalancer::api",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/loadBalancer:LoadBalancer::api",
+                "custom": true,
+                "type": "aws:lb/loadBalancer:LoadBalancer",
+                "inputs": {
+                    "__defaults": [
+                        "clientKeepAlive",
+                        "desyncMitigationMode",
+                        "dnsRecordClientRoutingPolicy",
+                        "enableHttp2",
+                        "idleTimeout",
+                        "name",
+                        "xffHeaderProcessingMode"
+                    ],
+                    "clientKeepAlive": 3600,
+                    "desyncMitigationMode": "defensive",
+                    "dnsRecordClientRoutingPolicy": "any_availability_zone",
+                    "enableHttp2": true,
+                    "idleTimeout": 60,
+                    "internal": false,
+                    "loadBalancerType": "application",
+                    "name": "api-d232b89",
+                    "region": "eu-central-1",
+                    "securityGroups": [
+                        "sg-0ac35e34e6110f0d0"
+                    ],
+                    "subnets": [
+                        "subnet-7dce4286d7ef6aee1",
+                        "subnet-fbc944b2fdb01d0e5"
+                    ],
+                    "tagsAll": {
+                        "ManagedBy": "pulumi",
+                        "Project": "nodejs-pro-hw31",
+                        "Stack": "demo"
+                    },
+                    "xffHeaderProcessingMode": "append"
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "internal": [],
+                    "loadBalancerType": [],
+                    "securityGroups": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base"
+                    ],
+                    "subnets": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base"
+                    ]
+                },
+                "sourcePosition": "project:///index.ts#76,22",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#76,22"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/role:Role::alb-target",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/role:Role::alb-target",
+                "custom": true,
+                "type": "aws:iam/role:Role",
+                "inputs": {
+                    "__defaults": [
+                        "maxSessionDuration",
+                        "name",
+                        "path"
+                    ],
+                    "assumeRolePolicy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}",
+                    "maxSessionDuration": 3600,
+                    "name": "alb-target-4ad3eda",
+                    "path": "/",
+                    "tagsAll": {
+                        "ManagedBy": "pulumi",
+                        "Project": "nodejs-pro-hw31",
+                        "Stack": "demo"
+                    }
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "assumeRolePolicy": []
+                },
+                "sourcePosition": "project:///index.ts#48,20",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#48,20"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api",
+                "custom": true,
+                "type": "aws:lb/targetGroup:TargetGroup",
+                "inputs": {
+                    "__defaults": [
+                        "name"
+                    ],
+                    "healthCheck": {
+                        "__defaults": [
+                            "port"
+                        ],
+                        "enabled": true,
+                        "healthyThreshold": 2,
+                        "interval": 30,
+                        "matcher": "200",
+                        "path": "/",
+                        "port": "traffic-port",
+                        "timeout": 5,
+                        "unhealthyThreshold": 2
+                    },
+                    "name": "api-23a8469",
+                    "region": "eu-central-1",
+                    "tagsAll": {
+                        "ManagedBy": "pulumi",
+                        "Project": "nodejs-pro-hw31",
+                        "Stack": "demo"
+                    },
+                    "targetType": "lambda"
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "healthCheck": [],
+                    "targetType": []
+                },
+                "sourcePosition": "project:///index.ts#60,21",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#60,21"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/rolePolicyAttachment:RolePolicyAttachment::alb-target-logs",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/rolePolicyAttachment:RolePolicyAttachment::alb-target-logs",
+                "custom": true,
+                "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+                "inputs": {
+                    "__defaults": [],
+                    "policyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                    "role": "alb-target-4ad3eda"
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/role:Role::alb-target"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "policyArn": [],
+                    "role": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/role:Role::alb-target"
+                    ]
+                },
+                "sourcePosition": "project:///index.ts#55,1",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#55,1"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/listener:Listener::http",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/listener:Listener::http",
+                "custom": true,
+                "type": "aws:lb/listener:Listener",
+                "inputs": {
+                    "__defaults": [],
+                    "defaultActions": [
+                        {
+                            "__defaults": [],
+                            "targetGroupArn": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                            "type": "forward"
+                        }
+                    ],
+                    "loadBalancerArn": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                    "port": 80,
+                    "protocol": "HTTP",
+                    "region": "eu-central-1",
+                    "tagsAll": {
+                        "ManagedBy": "pulumi",
+                        "Project": "nodejs-pro-hw31",
+                        "Stack": "demo"
+                    }
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api",
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/loadBalancer:LoadBalancer::api"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "defaultActions": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api"
+                    ],
+                    "loadBalancerArn": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/loadBalancer:LoadBalancer::api"
+                    ],
+                    "port": [],
+                    "protocol": []
+                },
+                "sourcePosition": "project:///index.ts#93,1",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#93,1"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/function:Function::alb-target",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/function:Function::alb-target",
+                "custom": true,
+                "type": "aws:lambda/function:Function",
+                "inputs": {
+                    "__defaults": [
+                        "memorySize",
+                        "name",
+                        "packageType",
+                        "reservedConcurrentExecutions",
+                        "timeout"
+                    ],
+                    "code": {
+                        "4dabf18193072939515e22adb298388d": "0def7320c3a5731c473e5ecbe6d01bc7",
+                        "assets": {
+                            "index.js": {
+                                "4dabf18193072939515e22adb298388d": "c44067f5952c0a294b673a41bacd8c17",
+                                "hash": "7f3d4ff2a3d74d09899088b6b27573ba1ae0a1c770ae61cc0fcd6a6eba2bf2b0",
+                                "text": "exports.handler = async () =\u003e ({ statusCode: 200, statusDescription: '200 OK', isBase64Encoded: false, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'ok' }) })"
+                            }
+                        },
+                        "hash": "2c22cd67d582b3679f935750ebb8e75a8965233603c7af108ebcc86ae01f8bfd"
+                    },
+                    "handler": "index.handler",
+                    "memorySize": 128,
+                    "name": "alb-target-f9e6753",
+                    "packageType": "Zip",
+                    "region": "eu-central-1",
+                    "reservedConcurrentExecutions": -1,
+                    "role": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                    "runtime": "nodejs22.x",
+                    "tagsAll": {
+                        "ManagedBy": "pulumi",
+                        "Project": "nodejs-pro-hw31",
+                        "Stack": "demo"
+                    },
+                    "timeout": 3
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api",
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/role:Role::alb-target"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "code": [],
+                    "handler": [],
+                    "role": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:iam/role:Role::alb-target"
+                    ],
+                    "runtime": []
+                },
+                "sourcePosition": "project:///index.ts#65,16",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#65,16"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:rds/instance:Instance::postgres",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:rds/instance:Instance::postgres",
+                "custom": true,
+                "type": "aws:rds/instance:Instance",
+                "inputs": {
+                    "__defaults": [
+                        "autoMinorVersionUpgrade",
+                        "deleteAutomatedBackups",
+                        "identifier"
+                    ],
+                    "allocatedStorage": 20,
+                    "applyImmediately": true,
+                    "autoMinorVersionUpgrade": true,
+                    "backupRetentionPeriod": 1,
+                    "dbName": "marketplace",
+                    "dbSubnetGroupName": "postgres-54dacdb",
+                    "deleteAutomatedBackups": true,
+                    "deletionProtection": false,
+                    "engine": "postgres",
+                    "engineVersion": "17",
+                    "identifier": "postgres1ea38cd",
+                    "instanceClass": "db.t4g.micro",
+                    "monitoringInterval": 0,
+                    "multiAz": true,
+                    "password": "[secret]",
+                    "performanceInsightsEnabled": false,
+                    "publiclyAccessible": false,
+                    "region": "eu-central-1",
+                    "skipFinalSnapshot": true,
+                    "storageEncrypted": true,
+                    "storageType": "gp3",
+                    "tagsAll": {
+                        "ManagedBy": "pulumi",
+                        "Project": "nodejs-pro-hw31",
+                        "Stack": "demo"
+                    },
+                    "username": "app_user",
+                    "vpcSecurityGroupIds": [
+                        "sg-5f909094406a57eaf"
+                    ]
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:rds/subnetGroup:SubnetGroup::postgres",
+                    "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "allocatedStorage": [],
+                    "applyImmediately": [],
+                    "backupRetentionPeriod": [],
+                    "dbName": [],
+                    "dbSubnetGroupName": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:rds/subnetGroup:SubnetGroup::postgres"
+                    ],
+                    "deletionProtection": [],
+                    "engine": [],
+                    "engineVersion": [],
+                    "instanceClass": [],
+                    "monitoringInterval": [],
+                    "multiAz": [],
+                    "password": [],
+                    "performanceInsightsEnabled": [],
+                    "publiclyAccessible": [],
+                    "skipFinalSnapshot": [],
+                    "storageEncrypted": [],
+                    "storageType": [],
+                    "username": [],
+                    "vpcSecurityGroupIds": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:StackReference::organization/one-marketplace-aws-base/base"
+                    ]
+                },
+                "additionalSecretOutputs": [
+                    "password",
+                    "passwordWo"
+                ],
+                "sourcePosition": "project:///index.ts#26,18",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#26,18"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/permission:Permission::alb-invoke",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/permission:Permission::alb-invoke",
+                "custom": true,
+                "type": "aws:lambda/permission:Permission",
+                "inputs": {
+                    "__defaults": [
+                        "statementId"
+                    ],
+                    "action": "lambda:InvokeFunction",
+                    "function": "alb-target-f9e6753",
+                    "principal": "elasticloadbalancing.amazonaws.com",
+                    "region": "eu-central-1",
+                    "sourceArn": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                    "statementId": "alb-invoke-c1dba63"
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/function:Function::alb-target",
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "action": [],
+                    "function": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/function:Function::alb-target"
+                    ],
+                    "principal": [],
+                    "sourceArn": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api"
+                    ]
+                },
+                "sourcePosition": "project:///index.ts#84,23",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#84,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        },
+        {
+            "op": "create",
+            "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroupAttachment:TargetGroupAttachment::api",
+            "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+            "newState": {
+                "urn": "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroupAttachment:TargetGroupAttachment::api",
+                "custom": true,
+                "type": "aws:lb/targetGroupAttachment:TargetGroupAttachment",
+                "inputs": {
+                    "__defaults": [],
+                    "region": "eu-central-1",
+                    "targetGroupArn": "04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                    "targetId": "04da6b54-80e4-46f7-96ec-b56ff0331ba9"
+                },
+                "parent": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:pulumi:Stack::one-marketplace-aws-demo-demo",
+                "dependencies": [
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/permission:Permission::alb-invoke",
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api",
+                    "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/function:Function::alb-target"
+                ],
+                "provider": "urn:pulumi:demo::one-marketplace-aws-demo::pulumi:providers:aws::default_7_53_0::04da6b54-80e4-46f7-96ec-b56ff0331ba9",
+                "propertyDependencies": {
+                    "targetGroupArn": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:lb/targetGroup:TargetGroup::api"
+                    ],
+                    "targetId": [
+                        "urn:pulumi:demo::one-marketplace-aws-demo::aws:lambda/function:Function::alb-target"
+                    ]
+                },
+                "sourcePosition": "project:///index.ts#91,1",
+                "stackTrace": [
+                    {
+                        "sourcePosition": "project:///index.ts#91,1"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3009,23"
+                    },
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/pulumi/vendor/ts-node@7.0.1/index.js#3011,12"
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/cmd/run/run.ts#541,33"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/runtime/stack.ts#79,28"
+                    },
+                    {
+                        "sourcePosition": "project:///node_modules/@pulumi/resource.ts#1687,22"
+                    }
+                ]
+            },
+            "detailedDiff": null
+        }
+    ],
+    "duration": 4381812583,
+    "changeSummary": {
+        "create": 11
+    }
+}

@@ -1,0 +1,65 @@
+{
+  "RoleName": "hw31-teardown",
+  "Arn": "arn:aws:iam::000000000000:role/hw31-teardown",
+  "TrustPolicy": {
+    "Statement": [
+      {
+        "Action": "sts:AssumeRoleWithWebIdentity",
+        "Condition": {
+          "StringEquals": {
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+          },
+          "StringLike": {
+            "token.actions.githubusercontent.com:sub": [
+              "repo:Ok-Trygub/one-marketplace:*",
+              "repo:Ok-Trygub@*/one-marketplace@*:*"
+            ]
+          }
+        },
+        "Effect": "Allow",
+        "Principal": {
+          "Federated": "arn:aws:iam::000000000000:oidc-provider/token.actions.githubusercontent.com"
+        }
+      }
+    ],
+    "Version": "2012-10-17"
+  },
+  "PermissionPolicy": {
+    "Statement": [
+      {
+        "Action": [
+          "rds:DescribeDBInstances",
+          "rds:DeleteDBInstance",
+          "rds:DescribeDBSubnetGroups",
+          "rds:DeleteDBSubnetGroup",
+          "rds:ListTagsForResource",
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DeleteLoadBalancer",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DeleteListener",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DeleteTargetGroup",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:DeregisterTargets",
+          "elasticloadbalancing:DescribeTags",
+          "ec2:DescribeNatGateways",
+          "ec2:DeleteNatGateway",
+          "ec2:DescribeAddresses",
+          "ec2:ReleaseAddress",
+          "ec2:DisassociateAddress",
+          "lambda:GetFunction",
+          "lambda:DeleteFunction",
+          "lambda:RemovePermission",
+          "iam:GetRole",
+          "iam:DeleteRole",
+          "iam:ListAttachedRolePolicies",
+          "iam:DetachRolePolicy",
+          "tag:GetResources"
+        ],
+        "Effect": "Allow",
+        "Resource": "*"
+      }
+    ],
+    "Version": "2012-10-17"
+  }
+}

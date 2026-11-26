@@ -1,0 +1,4 @@
+nat-minutes=1
+nat-billed-hours=1
+nat-left=0
+state-resources-left=0

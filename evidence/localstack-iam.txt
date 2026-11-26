@@ -1,0 +1,6 @@
+enforce-iam=1
+deny-all-create-bucket=200
+deny-all=200
+fake-key=200
+fake-key-body-match=1
+enforce-iam-log-lines=0

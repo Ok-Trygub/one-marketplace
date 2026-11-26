@@ -1,0 +1,6 @@
+name: one-marketplace-aws-demo
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: Hourly-billed part of hw31, RDS Multi-AZ, ALB with a Lambda target and an optional NAT gateway

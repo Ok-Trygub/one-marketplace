@@ -17,4 +17,19 @@ if [ -f "$CREDS" ]; then
 fi
 
 cd "$ROOT"
+
+if [ -n "${INFISICAL_UNIVERSAL_AUTH_CLIENT_ID:-}" ] && [ -n "${INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET:-}" ] && [ -z "${INFISICAL_TOKEN:-}" ]; then
+    INFISICAL_TOKEN="$(infisical login --method=universal-auth --client-id="$INFISICAL_UNIVERSAL_AUTH_CLIENT_ID" --client-secret="$INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET" --silent --plain)"
+    export INFISICAL_TOKEN
+fi
+
+if [ -n "${INFISICAL_TOKEN:-}" ]; then
+    exec infisical run --env="$ENV_SLUG" --projectId="$(node -p "require('./.infisical.json').workspaceId")" --silent -- "$@"
+fi
+
+if [ "${CI:-}" = true ]; then
+    echo "vault access is missing: set INFISICAL_UNIVERSAL_AUTH_CLIENT_ID and INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET in the repository secrets" >&2
+    exit 1
+fi
+
 exec infisical run --env="$ENV_SLUG" --silent -- "$@"
