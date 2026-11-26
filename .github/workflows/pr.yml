@@ -1,0 +1,277 @@
+name: pr
+
+on:
+  pull_request:
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/ok-trygub/one-marketplace
+  COST_BASELINE_USD: "7.73"
+  COST_BYPASS_LABEL: cost-approved
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Workflows pass actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+
+      - name: Rung 1, types and style
+        run: bash scripts/gate.sh types
+
+      - name: Rung 2, contract against the spec of the base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --depth=1 origin "$BASE_REF"
+          git show FETCH_HEAD:openapi/openapi.yaml > "$RUNNER_TEMP/base-openapi.yaml"
+          BASE_SPEC="$RUNNER_TEMP/base-openapi.yaml" bash scripts/gate.sh contract
+
+      - name: Rung 3, architecture
+        run: bash scripts/gate.sh arch
+
+  pact:
+    runs-on: ubuntu-latest
+    env:
+      PACT_BROKER_URL: ${{ secrets.PACT_BROKER_URL || 'http://127.0.0.1:9292' }}
+      PACT_BROKER_TOKEN: ${{ secrets.PACT_BROKER_TOKEN }}
+      PACT_VERSION: ${{ github.event.pull_request.head.sha }}
+      CONSUMER: marketplace-frontend
+      PROVIDER: marketplace-api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Start the Pact broker and the Redis instance with the token denylist
+        run: docker compose up -d --wait pact-broker redis-queue
+
+      - name: Consumer contract test
+        run: npm run test:contract
+
+      - name: Publish the contract to the broker
+        run: |
+          auth=()
+          [ -z "$PACT_BROKER_TOKEN" ] || auth=(-H "Authorization: Bearer $PACT_BROKER_TOKEN")
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT \
+            "$PACT_BROKER_URL/pacts/provider/$PROVIDER/consumer/$CONSUMER/version/$PACT_VERSION" \
+            "${auth[@]}" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@pacts/$CONSUMER-$PROVIDER.json")
+          echo "publish: HTTP $status"
+          [ "$status" = "200" ] || [ "$status" = "201" ]
+
+      - name: Provider verification with published results
+        run: npm run verify:provider
+
+      - name: can-i-deploy
+        run: |
+          auth=()
+          [ -z "$PACT_BROKER_TOKEN" ] || auth=(-H "Authorization: Bearer $PACT_BROKER_TOKEN")
+          curl -s -g "${auth[@]}" \
+            "$PACT_BROKER_URL/matrix?q%5B%5D%5Bpacticipant%5D=$CONSUMER&q%5B%5D%5Bversion%5D=$PACT_VERSION&q%5B%5D%5Bpacticipant%5D=$PROVIDER&q%5B%5D%5Bversion%5D=$PACT_VERSION&latestby=cvpv" \
+            | node -e '
+              let raw = ""
+              process.stdin.on("data", (chunk) => { raw += chunk })
+              process.stdin.on("end", () => {
+                const { summary } = JSON.parse(raw)
+                console.log("can-i-deploy: deployable=" + summary.deployable + " reason=" + summary.reason)
+                process.exit(summary.deployable === true ? 0 : 1)
+              })
+            '
+
+  build:
+    needs: gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      image-ref: ${{ steps.record.outputs.image-ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build secret for the image
+        run: printf 'ci-placeholder-token' > "$RUNNER_TEMP/npm_token"
+
+      - name: Build once and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          secret-files: npm_token=${{ runner.temp }}/npm_token
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:pr-head-${{ github.event.pull_request.head.sha }}
+
+      - name: Record the build
+        id: record
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IMAGE_REF: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          echo "build run=$GITHUB_RUN_ID image=$IMAGE_REF digest=$DIGEST" >> "$RUNNER_TEMP/evidence/build.log"
+          echo "image-ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evidence-build
+          path: ${{ runner.temp }}/evidence/build.log
+
+  scan:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      exit: ${{ steps.scan.outputs.exit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rung 4, image scan with the threshold from HW 28
+        id: scan
+        env:
+          IMAGE_REF: ${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+        run: |
+          docker pull -q "$IMAGE_REF"
+          docker tag "$IMAGE_REF" one-marketplace-api:scan
+          set +e
+          IMAGE=one-marketplace-api:scan SCAN_SEVERITY=HIGH,CRITICAL SCAN_MAX=20 bash scripts/gate.sh scan
+          code=$?
+          set -e
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+  oidc:
+    needs: gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      iss: ${{ steps.gate.outputs.iss }}
+      aud: ${{ steps.gate.outputs.aud }}
+      sub: ${{ steps.gate.outputs.sub }}
+      sig-verified: ${{ steps.gate.outputs.sig-verified }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: OIDC gate
+        id: gate
+        uses: ./.github/actions/oidc-gate
+
+  deploy:
+    needs: [build, scan, oidc, pact]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_ID: ${{ secrets.INFISICAL_UNIVERSAL_AUTH_CLIENT_ID }}
+      INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET: ${{ secrets.INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET }}
+      PULUMI_BACKEND_URL: file://${{ github.workspace }}/.pulumi-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Deploy to the pr environment in kind with pulumi preview, the cost gate, pulumi up and demo:rollout
+        uses: ./.github/actions/deploy-kind
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+          out-dir: ${{ runner.temp }}/evidence
+          cost-baseline-usd: ${{ env.COST_BASELINE_USD }}
+          cost-bypass: ${{ contains(github.event.pull_request.labels.*.name, env.COST_BYPASS_LABEL) }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: evidence-deploy
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: ignore
+
+  evidence:
+    needs: [gates, pact, build, scan, oidc, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: evidence-*
+          merge-multiple: true
+          path: pipeline-evidence
+
+      - name: Assemble evidence.txt
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          IMAGE_REF: ${{ needs.build.outputs.image-ref }}
+          BUILT_DIGEST: ${{ needs.build.outputs.digest }}
+          OIDC_ISS: ${{ needs.oidc.outputs.iss }}
+          OIDC_AUD: ${{ needs.oidc.outputs.aud }}
+          OIDC_SUB: ${{ needs.oidc.outputs.sub }}
+          OIDC_SIG_VERIFIED: ${{ needs.oidc.outputs.sig-verified }}
+          SCAN_EXIT: ${{ needs.scan.outputs.exit }}
+        run: |
+          mkdir -p pipeline-evidence
+          cd pipeline-evidence
+          touch build.log deploy.txt
+          {
+            echo "run-id=$GITHUB_RUN_ID"
+            echo "head-sha=$HEAD_SHA"
+            echo "image-ref=$IMAGE_REF"
+            echo "built-digest=$BUILT_DIGEST"
+            echo "build-invocations=$(wc -l < build.log | tr -d ' ')"
+            echo "creds-source=oidc"
+            echo "oidc-iss=$OIDC_ISS"
+            echo "oidc-aud=$OIDC_AUD"
+            echo "oidc-sub=$OIDC_SUB"
+            echo "oidc-sig-verified=$OIDC_SIG_VERIFIED"
+            echo "gate-scan-exit=$SCAN_EXIT"
+            cat deploy.txt
+          } > evidence.txt
+          rm deploy.txt
+          cat evidence.txt
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: pipeline-evidence
+          path: pipeline-evidence/

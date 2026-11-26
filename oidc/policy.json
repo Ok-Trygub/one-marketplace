@@ -1,0 +1,8 @@
+{
+    "iss": "https://token.actions.githubusercontent.com",
+    "aud": "one-marketplace-deploy",
+    "sub": [
+        "repo:Ok-Trygub@73954022/one-marketplace@1349570582:pull_request",
+        "repo:Ok-Trygub@73954022/one-marketplace@1349570582:environment:prod"
+    ]
+}

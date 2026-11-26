@@ -790,6 +790,100 @@ KMS не замінює Infisical з #11. Сховище доставляє се
 
 `evidence/preview-demo.txt` — `pulumi preview --json` стека demo з `aws:rds/instance:Instance`. `evidence/501.txt` — вивід `pulumi up`, який зупиняється на 501 для RDS і ELBv2. LocalStack 4.14.0 пише цю відмову так: «The API for service rds is either not included in your current license plan or has not yet been emulated by LocalStack». Тому `demo:failover` і `demo:alb` на цій смузі не мають з чим працювати, і їхніх ключів у `evidence/demos.txt` немає. Budgets у LocalStack теж немає, тому в `Pulumi.base.yaml` стоїть `withBudget: "false"`, а бюджет створюється першим ресурсом, коли прапорець увімкнений. `demo:nat` піднімає і зносить NAT: `nat-minutes=1`, `nat-billed-hours=1`.
 
+## CI/CD
+
+Два воркфлоу. `.github/workflows/pr.yml` біжить на кожному pull request і є умовою злиття. `.github/workflows/deploy.yml` біжить на push у `main` і через `workflow_dispatch`. Спільні кроки винесені в composite actions `.github/actions/oidc-gate` і `.github/actions/deploy-kind`. Кожен `uses:` запінений за SHA коміту, тег стоїть у коментарі поруч.
+
+```text
+pr.yml
+  gates ──┬── build ── scan ──┐
+          │                   ├── deploy ── evidence
+          └── oidc ───────────┤
+  pact ───────────────────────┘
+
+deploy.yml
+  resolve ──┐
+            ├── deploy
+  oidc ─────┘
+```
+
+| Джоба | Що робить | Чим каже «ні» |
+|---|---|---|
+| `gates` | actionlint, сходинка 1 `tsc --noEmit` + ESLint, сходинка 2 oasdiff проти спеки базової гілки, сходинка 3 dependency-cruiser | ненульовий код будь-якого інструмента |
+| `pact` | контракт споживача, верифікація провайдера, can-i-deploy з #16 | `deployable=false` |
+| `build` | єдина збірка образу, push у GHCR з тегом `github.sha`, digest у `outputs` | помилка збірки |
+| `scan` | сходинка 4, `npm run scan` з #28 по образу за digest, `SCAN_MAX=20` | `gate=fail` |
+| `oidc` | просить ID-токен GitHub, перевіряє підпис по `jwks_uri` і `oidc/policy.json` | `policy-allow=0` |
+| `deploy` | kind у раннері, `pulumi preview --json`, гейт вартості, `pulumi up` з digest, `demo:rollout` | `gate=fail` без лейбла, `failed≠0`, секрет у маніфесті |
+| `evidence` | збирає артефакт `pipeline-evidence`, `if: always()` | не гейт, лише звіт |
+
+Сходинка 3 перевіряє правила з `.dependency-cruiser.cjs`: контролери й гейтвеї імпортує лише `app.module.ts`, `entities` не залежать від інших шарів, `observability` не знає домену, продакшн-код не імпортує `src/demo`. Тобто модулі не лізуть один в одного.
+
+Образ збирається один раз, у джобі `build`. `deploy` бере digest з її `outputs`, а Pulumi отримує `image=ghcr.io/ok-trygub/one-marketplace@sha256:…`. `deploy.yml` не збирає нічого: він знаходить образ за тегом `pr-head-<sha голови PR>`, тобто за другим батьком merge-коміту, або бере digest з входу `workflow_dispatch`, і викочує той самий digest. Пакет `ghcr.io/ok-trygub/one-marketplace` публічний, тому kind тягне його без ключа.
+
+### Середовища
+
+| Середовище | Де | Коли |
+|---|---|---|
+| `pr` | одноразовий кластер kind у раннері джоби `deploy` в `pr.yml` | кожен pull request |
+| `prod` | одноразовий кластер kind у раннері джоби `deploy` в `deploy.yml`, GitHub environment `prod` | push у `main` або ручний запуск |
+
+Обидва кластери живуть рівно стільки, скільки джоба. Стан Pulumi лежить у файловому бекенді `file://…/.pulumi-ci` у робочій теці раннера, конвеєр не логіниться в Pulumi Cloud.
+
+### OIDC
+
+Умова довіри лежить у `oidc/policy.json`: `iss` = `https://token.actions.githubusercontent.com`, `aud` = `one-marketplace-deploy`, `sub` — два точні рядки для цього репозиторію у форматі з ID: `…:pull_request` для `pr.yml` і `…:environment:prod` для `deploy.yml`. Гейт `scripts/oidc-gate.mjs` тягне `/.well-known/openid-configuration`, з нього `jwks_uri`, перевіряє підпис RS256 ключем з тим самим `kid`, потім `iss`, `aud`, `sub`, `exp`. Друкує `iss`, `aud`, `sub`, `sig-verified`, `policy-allow`, сам токен не друкує, а файл з ним видаляється одразу після перевірки. Без підпису `policy-allow` завжди 0. `iss`, `aud` і файл умови приходять параметрами, тому `demo:oidc` проганяє той самий код зі своїм JWKS. Хмарного акаунта немає: гейт стоїть перед `deploy` і сам вирішує, пускати її чи ні.
+
+### Секрети конвеєра
+
+| Імʼя | Навіщо |
+|---|---|
+| `GITHUB_TOKEN` | push образу в GHCR з `packages: write` лише в джобі `build`, читання в `scan` і `resolve` |
+| `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID` | доступ до сховища #11: machine identity, якою `scripts/with-secrets.sh` входить у Infisical у джобі `deploy` |
+| `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET` | доступ до сховища #11: пара до client id |
+| `PACT_BROKER_URL` | адреса зовнішнього Pact-брокера з #16, без нього джоба `pact` піднімає локальний |
+| `PACT_BROKER_TOKEN` | токен зовнішнього Pact-брокера з #16, без нього запити йдуть без авторизації |
+
+Ключів хмари й реєстру в секретах немає: реєстр відкриває `GITHUB_TOKEN` на час джоби, хмари немає, а `id-token: write` стоїть лише на джобах `oidc`.
+
+### Змінні застосунку
+
+Значення живуть у сховищі #11 і зʼявляються в момент `pulumi up`, а не збірки. Програма з `infra/` кладе їх у Secret `marketplace-api-env`, под отримує їх через `envFrom.secretRef`. Конвеєр рахує, скільки разів значення цього Secret трапляються в `deployment.json` і `plan.json`, і падає, якщо хоч раз.
+
+| Змінна | Джерело | Навіщо |
+|---|---|---|
+| `DATABASE_URL` | сховище #11 | PgBouncer з паролем |
+| `BROKER_URL` | сховище #11 | RabbitMQ з паролем |
+| `REDIS_URL` | сховище #11 | Redis кешу |
+| `REDIS_QUEUE_URL` | сховище #11 | Redis denylist і BullMQ |
+| `JWT_PRIVATE_KEY` | сховище #11 | ключ підпису access-токенів |
+| `JWT_PUBLIC_KEY` | сховище #11 | ключ перевірки access-токенів |
+| `JWT_KID` | сховище #11 | id ключа |
+| `REFRESH_TOKEN_PEPPER` | сховище #11 | HMAC-ключ refresh-токенів |
+| `STORAGE_ENDPOINT` | сховище #11 | адреса обʼєктного сховища |
+| `STORAGE_REGION` | сховище #11 | регіон обʼєктного сховища |
+| `STORAGE_ACCESS_KEY` | сховище #11 | ключ обʼєктного сховища |
+| `STORAGE_SECRET_KEY` | сховище #11 | секрет обʼєктного сховища |
+| `STORAGE_BUCKET` | сховище #11 | бакет |
+| `PULUMI_CONFIG_PASSPHRASE` | сховище #11 | шифрування стану Pulumi |
+
+### Межа маскування
+
+GitHub замінює на `***` лише точне входження значення, яке він знає як секрет. Він не впізнає те саме значення в base64, у URL-кодуванні, розрізане на частини, у JSON з екрануванням або надруковане інструментом у власному форматі. Тому захист тут не маскування, а відсутність місць друку: жодного `echo` секрета, `env`, `printenv` чи `set -x` у кроках, які бачать секрет. Секрети сховища потрапляють лише в процеси під `scripts/with-secrets.sh`, а `pulumi preview --json` показує Secret як `[secret]`. Це шосте місце витоку з #11 після git-історії, лога застосунку, шару образу, `docker inspect` і `docker history`.
+
+### Гейт вартості
+
+`src/mapping.ts` бере з `plan.json` кожен Deployment і StatefulSet, множить `resources.requests` контейнерів на `replicas` і на 730 годин. Ставки — AWS Fargate, Linux x86, eu-central-1, з [прайс-листа AmazonECS](https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonECS/current/eu-central-1/index.json), опублікованого 2026-11-11T23:46:23Z; сторінка — [aws.amazon.com/fargate/pricing](https://aws.amazon.com/fargate/pricing/).
+
+| Ресурс | Ставка |
+|---|---|
+| vCPU | $0,04656 за vCPU-годину |
+| памʼять | $0,00511 за GB-годину |
+
+Поточний план: 2 репліки по 100m CPU і 128Mi, тобто $7,73 на місяць, це `COST_BASELINE_USD` у воркфлоу. Гейт реагує на зміну, а не на суму: бюджет = baseline + більше з $10 і 20 %, зараз $17,73. `COST_BUDGET_USD` задає бюджет напряму. Вердикт друкується рядком `gate=pass` або `gate=fail`, на `fail` код виходу 1. Обхід — лейбл на pull request:
+
+cost-gate-bypass-label: cost-approved
+
 ## Grading
 
 ```bash
@@ -882,4 +976,7 @@ printf 'dummy-npm-token' > .npm_token
 npm run image:build
 npm run cluster:up
 npm run up
+npm run demo:gates
+npm run demo:oidc
+PLAN_JSON=/tmp/hw32/plan.json COST_BUDGET_USD=0 npm run gate:cost
 ```

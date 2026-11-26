@@ -1,0 +1,41 @@
+name: oidc-gate
+description: Requests the GitHub ID token, verifies its signature against the issuer JWKS and applies oidc/policy.json
+
+outputs:
+  iss:
+    description: iss claim of the token
+    value: ${{ steps.gate.outputs.iss }}
+  aud:
+    description: aud claim of the token
+    value: ${{ steps.gate.outputs.aud }}
+  sub:
+    description: sub claim of the token
+    value: ${{ steps.gate.outputs.sub }}
+  sig-verified:
+    description: 1 when the signature matched a key from jwks_uri
+    value: ${{ steps.gate.outputs.sig-verified }}
+  policy-allow:
+    description: 1 when iss, aud and sub match the policy
+    value: ${{ steps.gate.outputs.policy-allow }}
+
+runs:
+  using: composite
+  steps:
+    - name: Verify the GitHub ID token against oidc/policy.json
+      id: gate
+      shell: bash
+      run: |
+        token_file="$RUNNER_TEMP/github-oidc.jwt"
+        audience=$(jq -r .aud oidc/policy.json)
+        curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$audience" | jq -r .value > "$token_file"
+        set +e
+        node scripts/oidc-gate.mjs --token-file "$token_file" --policy oidc/policy.json > "$RUNNER_TEMP/oidc-gate.txt"
+        code=$?
+        set -e
+        rm -f "$token_file"
+        cat "$RUNNER_TEMP/oidc-gate.txt"
+        for key in iss aud sub sig-verified policy-allow; do
+          echo "$key=$(sed -n "s/^$key=//p" "$RUNNER_TEMP/oidc-gate.txt")" >> "$GITHUB_OUTPUT"
+        done
+        exit "$code"

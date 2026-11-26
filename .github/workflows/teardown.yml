@@ -6,12 +6,14 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
   teardown:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     services:
       localstack:
         image: localstack/localstack:4.14.0
@@ -23,17 +25,17 @@ jobs:
       AWS_REGION: eu-central-1
       AWS_ROLE_ARN: arn:aws:iam::000000000000:role/hw31-teardown
       AWS_ROLE_SESSION_NAME: github-teardown
-      AWS_WEB_IDENTITY_TOKEN_FILE: ${{ runner.temp }}/github-oidc-token
+      AWS_WEB_IDENTITY_TOKEN_FILE: ${{ github.workspace }}/.github-oidc-token
       AWS_ENDPOINT_URL: http://localhost:23166
       PULUMI_BACKEND_URL: file://${{ github.workspace }}/.pulumi-aws
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
 
-      - uses: pulumi/actions@v6
+      - uses: pulumi/actions@96c7761824268174e0d2a4e8c7d75671eebd24a7 # v7.1.0
         with:
           pulumi-version: 3.273.0
 

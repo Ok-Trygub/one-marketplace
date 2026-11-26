@@ -7,7 +7,10 @@ IMAGE="${IMAGE:-one-marketplace-api:hw28}"
 DEPENDENCIES="pgbouncer rabbitmq redis-cache redis-queue storage"
 
 kind get clusters 2>/dev/null | grep -qx "$CLUSTER" || kind create cluster --config "$ROOT/k8s/kind-config.yaml" --wait 120s
-kind load docker-image "$IMAGE" --name "$CLUSTER"
+case "$IMAGE" in
+    *@sha256:*) ;;
+    *) kind load docker-image "$IMAGE" --name "$CLUSTER" ;;
+esac
 
 for service in $DEPENDENCIES; do
     container=$(docker compose -f "$ROOT/docker-compose.yml" ps -q "$service")
